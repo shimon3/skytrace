@@ -16,19 +16,22 @@ test('converts aviation units to metric values', () => {
 });
 
 test('normalizeAircraft uses registration and normalizes API values', () => {
-  const aircraft = normalizeAircraft({
-    hex: 'abc123',
-    flight: ' SKY1 ',
-    r: '4X-ABC',
-    t: 'B738',
-    lat: 32,
-    lon: 34,
-    alt_baro: 10000,
-    gs: 400,
-    track: 90,
-    baro_rate: 500,
-    squawk: '1234',
-  }, 1000);
+  const aircraft = normalizeAircraft(
+    {
+      hex: 'abc123',
+      flight: ' SKY1 ',
+      r: '4X-ABC',
+      t: 'B738',
+      lat: 32,
+      lon: 34,
+      alt_baro: 10000,
+      gs: 400,
+      track: 90,
+      baro_rate: 500,
+      squawk: '1234',
+    },
+    1000
+  );
 
   assert.equal(aircraft.registration, '4X-ABC');
   assert.equal(Object.hasOwn(aircraft, 'country'), false);
@@ -62,5 +65,8 @@ test('applyAircraftFilters combines altitude and ground filters', () => {
     { id: 'cruise', alt: 9000, onGround: false },
   ];
   const result = applyAircraftFilters(aircraft, { altMin: 1000, altMax: 10000, hideGround: true });
-  assert.deepEqual(result.map(item => item.id), ['cruise']);
+  assert.deepEqual(
+    result.map((item) => item.id),
+    ['cruise']
+  );
 });

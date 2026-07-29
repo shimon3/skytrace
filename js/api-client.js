@@ -9,7 +9,9 @@ export class AircraftApiClient {
   #backoffUntil = 0;
   #lastSuccessfulUpdate = null;
 
-  get lastSuccessfulUpdate() { return this.#lastSuccessfulUpdate; }
+  get lastSuccessfulUpdate() {
+    return this.#lastSuccessfulUpdate;
+  }
 
   async fetchPoint(point, radiusNm) {
     const task = async () => {
@@ -22,8 +24,8 @@ export class AircraftApiClient {
         this.#lastSuccessfulUpdate = now;
         this.#consecutiveFailures = 0;
         return (payload.ac || [])
-          .filter(item => item.hex && item.lat != null && item.lon != null)
-          .map(item => normalizeAircraft(item, now));
+          .filter((item) => item.hex && item.lat != null && item.lon != null)
+          .map((item) => normalizeAircraft(item, now));
       } catch (error) {
         if (error.message !== 'API_BACKOFF') {
           this.#consecutiveFailures += 1;
