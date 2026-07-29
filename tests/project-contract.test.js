@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('index loads the modular application and current styles', async () => {
   const html = await read('index.html');
@@ -24,7 +24,14 @@ test('application uses registration terminology and modular imports', async () =
 
 test('global scan retains representative remote regions', async () => {
   const app = await read('app.js');
-  for (const region of ['Russie (Ouest)', 'Sibérie', 'Pacifique (Hawaï)', 'Alaska', 'Atlantique Nord', 'Chili']) {
+  for (const region of [
+    'Russie (Ouest)',
+    'Sibérie',
+    'Pacifique (Hawaï)',
+    'Alaska',
+    'Atlantique Nord',
+    'Chili',
+  ]) {
     assert.match(app, new RegExp(region.replace(/[()]/g, '\\$&')));
   }
 });

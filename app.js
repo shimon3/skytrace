@@ -181,7 +181,7 @@ function render(now) {
   if (now - lastFrameAt >= 150) {
     lastFrameAt = now;
     const visible = applyAircraftFilters([...aircraftById.values()], filters);
-    renderedAircraft = visible.map(aircraft => ({
+    renderedAircraft = visible.map((aircraft) => ({
       ...aircraft,
       ...projectPosition(aircraft, Date.now()),
       selected: aircraft.id === selectedId,
@@ -189,7 +189,7 @@ function render(now) {
     planeLayer.setData(renderedAircraft);
     elements.count.textContent = visible.length.toLocaleString(getLanguage());
     if (followEnabled && selectedId) {
-      const aircraft = renderedAircraft.find(item => item.id === selectedId);
+      const aircraft = renderedAircraft.find((item) => item.id === selectedId);
       if (aircraft) map.panTo([aircraft.lat, aircraft.lon], { animate: false });
     }
   }
@@ -205,17 +205,25 @@ function selectAircraft(aircraft) {
 
 async function updatePanel(aircraft) {
   elements.panel.classList.add('show');
-  document.getElementById('p-callsign').textContent = aircraft.callsign || aircraft.id.toUpperCase();
+  document.getElementById('p-callsign').textContent =
+    aircraft.callsign || aircraft.id.toUpperCase();
   const badge = document.getElementById('p-type-badge');
   badge.textContent = aircraft.type || '';
   badge.style.display = aircraft.type ? 'inline-block' : 'none';
   elements.registration.textContent = aircraft.registration || '—';
-  document.getElementById('p-alt').textContent = aircraft.alt == null ? '—' : `${Math.round(aircraft.alt)} m`;
-  document.getElementById('p-speed').textContent = aircraft.speed == null ? '—' : `${Math.round(aircraft.speed * 3.6)} km/h`;
-  document.getElementById('p-heading').textContent = aircraft.heading == null ? '—' : `${Math.round(aircraft.heading)}°`;
-  document.getElementById('p-vrate').textContent = aircraft.vrate == null ? '—' : `${aircraft.vrate > 0 ? '+' : ''}${aircraft.vrate.toFixed(1)} m/s`;
+  document.getElementById('p-alt').textContent =
+    aircraft.alt == null ? '—' : `${Math.round(aircraft.alt)} m`;
+  document.getElementById('p-speed').textContent =
+    aircraft.speed == null ? '—' : `${Math.round(aircraft.speed * 3.6)} km/h`;
+  document.getElementById('p-heading').textContent =
+    aircraft.heading == null ? '—' : `${Math.round(aircraft.heading)}°`;
+  document.getElementById('p-vrate').textContent =
+    aircraft.vrate == null
+      ? '—'
+      : `${aircraft.vrate > 0 ? '+' : ''}${aircraft.vrate.toFixed(1)} m/s`;
   document.getElementById('p-squawk').textContent = aircraft.squawk || '—';
-  document.getElementById('p-pos').textContent = `${aircraft.lat.toFixed(2)}, ${aircraft.lon.toFixed(2)}`;
+  document.getElementById('p-pos').textContent =
+    `${aircraft.lat.toFixed(2)}, ${aircraft.lon.toFixed(2)}`;
   const requestedRegistration = aircraft.registration;
   const photo = await getAircraftPhoto(requestedRegistration);
   if (selectedId === aircraft.id && photo) {
@@ -254,7 +262,7 @@ function setCustomPoint(lat, lon, name = 'Zone sélectionnée') {
   }).addTo(map);
 }
 
-map.on('click', event => {
+map.on('click', (event) => {
   const click = map.latLngToContainerPoint(event.latlng);
   let closest = null;
   let distance = Infinity;
@@ -274,11 +282,11 @@ map.on('click', event => {
 });
 
 document.getElementById('panel-close').addEventListener('click', closePanel);
-document.getElementById('btn-follow').addEventListener('click', event => {
+document.getElementById('btn-follow').addEventListener('click', (event) => {
   followEnabled = !followEnabled;
   event.currentTarget.classList.toggle('active', followEnabled);
 });
-document.getElementById('btn-route').addEventListener('click', event => {
+document.getElementById('btn-route').addEventListener('click', (event) => {
   routeVisible = !routeVisible;
   event.currentTarget.classList.toggle('active', routeVisible);
   if (routeVisible) {
@@ -288,7 +296,7 @@ document.getElementById('btn-route').addEventListener('click', event => {
     map.removeLayer(routeLine);
   }
 });
-document.getElementById('btn-share').addEventListener('click', async event => {
+document.getElementById('btn-share').addEventListener('click', async (event) => {
   const aircraft = aircraftById.get(selectedId);
   if (!aircraft) return;
   const url = new URL(location.href);
@@ -310,15 +318,17 @@ document.getElementById('zones-toggle').addEventListener('click', () => {
 document.getElementById('filters-toggle').addEventListener('click', () => {
   document.getElementById('filters-panel').classList.toggle('show');
 });
-document.querySelectorAll('.zone-btn').forEach(button => button.addEventListener('click', () => {
-  const region = button.dataset.region;
-  priorityPoints = HUB_POINTS.filter(point => point.region === region);
-  priorityIndex = 0;
-  gridIndex = 0;
-  const view = CONTINENT_VIEWS[region];
-  if (view) map.flyTo(view[0], view[1], { duration: 1 });
-  fetchTick();
-}));
+document.querySelectorAll('.zone-btn').forEach((button) =>
+  button.addEventListener('click', () => {
+    const region = button.dataset.region;
+    priorityPoints = HUB_POINTS.filter((point) => point.region === region);
+    priorityIndex = 0;
+    gridIndex = 0;
+    const view = CONTINENT_VIEWS[region];
+    if (view) map.flyTo(view[0], view[1], { duration: 1 });
+    fetchTick();
+  })
+);
 document.getElementById('zone-clear').addEventListener('click', () => {
   priorityPoints = null;
   priorityIndex = 0;
@@ -335,7 +345,7 @@ function refreshFilters() {
   filters.hideGround = document.getElementById('f-hide-ground').checked;
 }
 
-['f-alt-min', 'f-alt-max'].forEach(id => {
+['f-alt-min', 'f-alt-max'].forEach((id) => {
   document.getElementById(id).addEventListener('input', refreshFilters);
 });
 document.getElementById('f-hide-ground').addEventListener('change', refreshFilters);
@@ -346,7 +356,7 @@ document.getElementById('f-reset').addEventListener('click', () => {
   refreshFilters();
 });
 
-elements.search.addEventListener('keydown', event => {
+elements.search.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;
   const query = event.currentTarget.value.trim().toUpperCase();
   if (!query) return;
@@ -357,8 +367,9 @@ elements.search.addEventListener('keydown', event => {
     fetchTick();
     return;
   }
-  const aircraft = [...aircraftById.values()].find(item =>
-    item.callsign.toUpperCase().includes(query) || item.registration.toUpperCase().includes(query)
+  const aircraft = [...aircraftById.values()].find(
+    (item) =>
+      item.callsign.toUpperCase().includes(query) || item.registration.toUpperCase().includes(query)
   );
   if (aircraft) {
     selectAircraft(aircraft);
@@ -372,7 +383,7 @@ elements.search.addEventListener('keydown', event => {
   }
 });
 
-document.querySelectorAll('.lang-btn').forEach(button => {
+document.querySelectorAll('.lang-btn').forEach((button) => {
   button.addEventListener('click', () => applyLanguage(button.dataset.lang));
 });
 document.addEventListener('skytrace:languagechange', () => {
@@ -383,8 +394,9 @@ document.addEventListener('skytrace:languagechange', () => {
 const sharedPlane = new URLSearchParams(location.search).get('plane')?.toUpperCase();
 function checkSharedPlane() {
   if (!sharedPlane || selectedId) return;
-  const aircraft = [...aircraftById.values()].find(item =>
-    item.registration.toUpperCase() === sharedPlane || item.callsign.toUpperCase() === sharedPlane
+  const aircraft = [...aircraftById.values()].find(
+    (item) =>
+      item.registration.toUpperCase() === sharedPlane || item.callsign.toUpperCase() === sharedPlane
   );
   if (aircraft) {
     selectAircraft(aircraft);
