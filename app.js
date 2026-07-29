@@ -136,10 +136,11 @@ const labelsLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_lab
 let layersControl = null;
 function buildLayersControl() {
   if (layersControl) map.removeControl(layersControl);
+  const isMobile = window.innerWidth <= 600;
   layersControl = L.control.layers(
     { [t('map_dark')]: darkLayer, [t('map_satellite')]: satelliteLayer, [t('map_colored')]: voyagerLayer },
     null,
-    { position: 'topright', collapsed: false }
+    { position: 'topright', collapsed: isMobile }
   ).addTo(map);
 }
 buildLayersControl();
@@ -542,13 +543,14 @@ function nextQueryPoint() {
   return point;
 }
 
-let backoffUntil = 0; // timestamp; while in the future, fetchTick skips (rate-limit cooldown)
+let backoffUntil = 0;      // timestamp; while in the future, fetchTick skips (rate-limit cooldown)
+let consecutiveFailures = 0;
 
 async function fetchTick() {
   if (Date.now() < backoffUntil) {
     statusEl.className = 'err';
     statusEl.textContent = t('status_error');
-    return; // still cooling down from a 429
+    return; // still cooling down
   }
   const point = nextQueryPoint();
   zoneEl.textContent = point.name.toUpperCase();
@@ -557,12 +559,6 @@ async function fetchTick() {
   try {
     const url = `https://api.airplanes.live/v2/point/${point.lat}/${point.lon}/${RADIUS_NM}`;
     const res = await fetch(url);
-    if (res.status === 429) {
-      // Too many requests (often from multiple tabs/instances sharing the
-      // same IP). Back off for a while instead of retrying every tick.
-      backoffUntil = Date.now() + 15000;
-      throw new Error('HTTP 429 — cooling down 15s');
-    }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const aircraft = data.ac || [];
@@ -611,6 +607,7 @@ async function fetchTick() {
     cyclesEl.textContent = cycleCount.toLocaleString('fr-FR');
     statusEl.className = 'live';
     statusEl.textContent = t('status_live');
+    consecutiveFailures = 0;
     if (selectedId && planesById[selectedId]) {
       updatePanel(planesById[selectedId]);
     }
@@ -622,6 +619,15 @@ async function fetchTick() {
     statusEl.className = 'err';
     statusEl.textContent = t('status_error');
     console.error('Airplanes.live fetch failed:', err);
+    // We can't reliably read the HTTP status for CORS-opaque failures (a
+    // 429 without CORS headers just looks like "Failed to fetch" to JS),
+    // so back off progressively on any run of consecutive failures instead
+    // of trying to detect the exact status code.
+    consecutiveFailures++;
+    if (consecutiveFailures >= 3) {
+      const backoffSeconds = Math.min(15 * Math.pow(2, consecutiveFailures - 3), 120); // 15s, 30s, 60s, 120s cap
+      backoffUntil = Date.now() + backoffSeconds * 1000;
+    }
   }
 }
 
