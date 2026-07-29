@@ -2,6 +2,7 @@ const translations = {
   fr: {
     search_placeholder: 'indicatif, immatriculation ou code aéroport…',
     status_connecting: 'CONNEXION…', status_updating: 'MISE À JOUR…', status_live: 'EN DIRECT', status_error: 'ERREUR API', status_not_tracked: 'PAS ENCORE SUIVI',
+    status_age: n => `EN DIRECT · ${n} s`,
     zone_label: 'ZONE', zone_searching: 'RECHERCHE DE ', stat_tracked: 'VOLS SUIVIS', stat_cycles: 'ZONES EXPLORÉES',
     btn_zones: 'ZONES', btn_filters: 'FILTRES', btn_resume: 'REPRENDRE LA ROTATION MONDIALE', zones_title: 'Explorer un continent',
     cont_europe: 'Europe', cont_me: 'Moyen-Orient', cont_africa: 'Afrique', cont_asia: 'Asie', cont_oceania: 'Océanie', cont_na: 'Amérique du Nord', cont_sa: 'Amérique du Sud',
@@ -16,6 +17,7 @@ const translations = {
   },
   en: {
     search_placeholder: 'callsign, registration or airport code…', status_connecting: 'CONNECTING…', status_updating: 'UPDATING…', status_live: 'LIVE', status_error: 'API ERROR', status_not_tracked: 'NOT TRACKED YET',
+    status_age: n => `LIVE · ${n} s`,
     zone_label: 'ZONE', zone_searching: 'SEARCHING FOR ', stat_tracked: 'FLIGHTS TRACKED', stat_cycles: 'ZONES SCANNED', btn_zones: 'ZONES', btn_filters: 'FILTERS', btn_resume: 'RESUME GLOBAL ROTATION', zones_title: 'Explore a continent',
     cont_europe: 'Europe', cont_me: 'Middle East', cont_africa: 'Africa', cont_asia: 'Asia', cont_oceania: 'Oceania', cont_na: 'North America', cont_sa: 'South America',
     filter_alt_min: 'Min altitude (m)', filter_alt_max: 'Max altitude (m)', filter_hide_ground: 'Hide aircraft on the ground', btn_reset: 'RESET',
@@ -26,6 +28,7 @@ const translations = {
   },
   he: {
     search_placeholder: 'סימן קריאה, מספר רישום או קוד שדה תעופה…', status_connecting: 'מתחבר…', status_updating: 'מתעדכן…', status_live: 'בשידור חי', status_error: 'שגיאת API', status_not_tracked: 'עדיין לא נמצא',
+    status_age: n => `בשידור חי · ${n} שנ׳`,
     zone_label: 'אזור', zone_searching: 'מחפש את ', stat_tracked: 'טיסות במעקב', stat_cycles: 'אזורים שנסרקו', btn_zones: 'אזורים', btn_filters: 'סינון', btn_resume: 'חזרה לסריקה עולמית', zones_title: 'חקור יבשת',
     cont_europe: 'אירופה', cont_me: 'המזרח התיכון', cont_africa: 'אפריקה', cont_asia: 'אסיה', cont_oceania: 'אוקיאניה', cont_na: 'צפון אמריקה', cont_sa: 'דרום אמריקה',
     filter_alt_min: 'גובה מינימלי (מ׳)', filter_alt_max: 'גובה מקסימלי (מ׳)', filter_hide_ground: 'הסתר מטוסים על הקרקע', btn_reset: 'איפוס',
