@@ -542,7 +542,14 @@ function nextQueryPoint() {
   return point;
 }
 
+let backoffUntil = 0; // timestamp; while in the future, fetchTick skips (rate-limit cooldown)
+
 async function fetchTick() {
+  if (Date.now() < backoffUntil) {
+    statusEl.className = 'err';
+    statusEl.textContent = t('status_error');
+    return; // still cooling down from a 429
+  }
   const point = nextQueryPoint();
   zoneEl.textContent = point.name.toUpperCase();
   statusEl.className = 'loading';
@@ -550,6 +557,12 @@ async function fetchTick() {
   try {
     const url = `https://api.airplanes.live/v2/point/${point.lat}/${point.lon}/${RADIUS_NM}`;
     const res = await fetch(url);
+    if (res.status === 429) {
+      // Too many requests (often from multiple tabs/instances sharing the
+      // same IP). Back off for a while instead of retrying every tick.
+      backoffUntil = Date.now() + 15000;
+      throw new Error('HTTP 429 — cooling down 15s');
+    }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const aircraft = data.ac || [];
