@@ -17,10 +17,20 @@ const forbiddenSecretPatterns = [
   /api_key=[A-Za-z0-9_-]{12,}/,
 ];
 
+const optionalVersion = '(?:\\?v=[A-Za-z0-9._-]+)?';
+
 test('keeps the existing aircraft application and loads AirLabs as an additive module', () => {
-  assert.match(index, /<script type="module" src="app\.js"><\/script>/);
-  assert.match(index, /<script type="module" src="js\/flight-status-integration\.js"><\/script>/);
-  assert.match(index, /href="flight-status\.css"/);
+  assert.match(
+    index,
+    new RegExp(`<script type="module" src="app\\.js${optionalVersion}"><\\/script>`)
+  );
+  assert.match(
+    index,
+    new RegExp(
+      `<script type="module" src="js\\/flight-status-integration\\.js${optionalVersion}"><\\/script>`
+    )
+  );
+  assert.match(index, new RegExp(`href="flight-status\\.css${optionalVersion}"`));
 });
 
 test('stores the AirLabs key only in the Cloudflare environment', () => {
