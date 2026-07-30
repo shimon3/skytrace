@@ -6,7 +6,8 @@ function json(payload, status = 200, extraHeaders = {}) {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': status === 200 ? `public, max-age=60, s-maxage=${CACHE_SECONDS}` : 'no-store',
+      'Cache-Control':
+        status === 200 ? `public, max-age=60, s-maxage=${CACHE_SECONDS}` : 'no-store',
       'X-Content-Type-Options': 'nosniff',
       ...extraHeaders,
     },

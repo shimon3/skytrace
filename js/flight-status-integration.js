@@ -116,7 +116,9 @@ function formatAirportTime(value) {
   if (!match) return String(value);
   const [, year, month, day, hour, minute] = match;
   const locale = language() === 'he' ? 'he-IL' : language() === 'en' ? 'en-GB' : 'fr-FR';
-  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)));
+  const date = new Date(
+    Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute))
+  );
   return new Intl.DateTimeFormat(locale, {
     day: '2-digit',
     month: '2-digit',
@@ -246,12 +248,8 @@ function renderFlight(flight) {
   document.getElementById('fs-dep-estimated').textContent = formatAirportTime(
     flight.departure.estimated
   );
-  document.getElementById('fs-dep-actual').textContent = formatAirportTime(
-    flight.departure.actual
-  );
-  document.getElementById('fs-dep-delay').textContent = formatDelay(
-    flight.departure.delayMinutes
-  );
+  document.getElementById('fs-dep-actual').textContent = formatAirportTime(flight.departure.actual);
+  document.getElementById('fs-dep-delay').textContent = formatDelay(flight.departure.delayMinutes);
   document.getElementById('fs-arr-scheduled').textContent = formatAirportTime(
     flight.arrival.scheduled
   );
@@ -269,8 +267,7 @@ function renderFlight(flight) {
     flight.arrival.gate
   );
 
-  const effectiveDelay =
-    flight.arrival.delayMinutes ?? flight.departure.delayMinutes ?? null;
+  const effectiveDelay = flight.arrival.delayMinutes ?? flight.departure.delayMinutes ?? null;
   document.getElementById('fs-punctuality').textContent = formatDelay(effectiveDelay);
 }
 
@@ -320,7 +317,8 @@ async function refreshSelectedFlight() {
     renderFlight(flight);
   } catch (error) {
     if (sequence !== requestSequence || key !== activeKey) return;
-    const value = error.code === 'AIRLABS_NOT_CONFIGURED' ? text().notConfigured : text().unavailable;
+    const value =
+      error.code === 'AIRLABS_NOT_CONFIGURED' ? text().notConfigured : text().unavailable;
     showMessage(value, error.code === 'AIRLABS_NOT_CONFIGURED' ? 'warning' : 'muted');
   }
 }
