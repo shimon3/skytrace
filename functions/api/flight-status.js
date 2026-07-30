@@ -112,9 +112,7 @@ async function requestLiveFlightByRegistration(apiKey, registration) {
   }
 
   const flights = Array.isArray(payload?.response) ? payload.response : [];
-  const exact = flights.filter(
-    (flight) => sanitizeCode(flight.reg_number) === registration
-  );
+  const exact = flights.filter((flight) => sanitizeCode(flight.reg_number) === registration);
 
   return exact.sort((a, b) => Number(b.updated || 0) - Number(a.updated || 0))[0] || null;
 }
