@@ -1,4 +1,5 @@
 const AIRLABS_ENDPOINT = 'https://airlabs.co/api/v9/flight';
+const AIRLABS_LIVE_ENDPOINT = 'https://airlabs.co/api/v9/flights';
 const CACHE_SECONDS = 300;
 
 function json(payload, status = 200, extraHeaders = {}) {
@@ -89,6 +90,71 @@ async function requestAirLabs(apiKey, parameter, code) {
   return payload?.response || null;
 }
 
+async function requestLiveFlightByRegistration(apiKey, registration) {
+  if (!registration) return null;
+
+  const upstream = new URL(AIRLABS_LIVE_ENDPOINT);
+  upstream.searchParams.set('reg_number', registration);
+  upstream.searchParams.set('api_key', apiKey);
+
+  const response = await fetch(upstream, {
+    headers: { Accept: 'application/json' },
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const message = payload?.error?.message || `AirLabs HTTP ${response.status}`;
+    throw new Error(message);
+  }
+
+  if (payload?.error) {
+    throw new Error(payload.error.message || 'AirLabs returned an error');
+  }
+
+  const flights = Array.isArray(payload?.response) ? payload.response : [];
+  const exact = flights.filter(
+    (flight) => sanitizeCode(flight.reg_number) === registration
+  );
+
+  return exact.sort((a, b) => Number(b.updated || 0) - Number(a.updated || 0))[0] || null;
+}
+
+function callsignCandidates(callsign) {
+  const candidates = [callsign];
+  const withoutOperationalSuffix = callsign.match(/^([A-Z]{3}\d{1,4})[A-Z]$/)?.[1];
+  if (withoutOperationalSuffix && withoutOperationalSuffix !== callsign) {
+    candidates.push(withoutOperationalSuffix);
+  }
+  return [...new Set(candidates)];
+}
+
+async function resolveFlight(apiKey, callsign, registration) {
+  for (const candidate of callsignCandidates(callsign)) {
+    const flight = await requestAirLabs(apiKey, 'flight_icao', candidate);
+    if (flight) return flight;
+  }
+
+  if (/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(callsign)) {
+    const flight = await requestAirLabs(apiKey, 'flight_iata', callsign);
+    if (flight) return flight;
+  }
+
+  const liveFlight = await requestLiveFlightByRegistration(apiKey, registration);
+  if (!liveFlight) return null;
+
+  if (liveFlight.flight_icao) {
+    const detailed = await requestAirLabs(apiKey, 'flight_icao', liveFlight.flight_icao);
+    if (detailed) return detailed;
+  }
+
+  if (liveFlight.flight_iata) {
+    const detailed = await requestAirLabs(apiKey, 'flight_iata', liveFlight.flight_iata);
+    if (detailed) return detailed;
+  }
+
+  return liveFlight;
+}
+
 export async function onRequestGet(context) {
   const apiKey = context.env.AIRLABS_API_KEY;
   if (!apiKey) {
@@ -124,11 +190,7 @@ export async function onRequestGet(context) {
   if (cached) return cached;
 
   try {
-    let flight = await requestAirLabs(apiKey, 'flight_icao', callsign);
-
-    if (!flight && /^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(callsign)) {
-      flight = await requestAirLabs(apiKey, 'flight_iata', callsign);
-    }
+    const flight = await resolveFlight(apiKey, callsign, registration);
 
     if (!flight) {
       return json(
@@ -144,7 +206,7 @@ export async function onRequestGet(context) {
       registration &&
       flight.reg_number &&
       sanitizeCode(flight.reg_number) !== registration &&
-      sanitizeCode(flight.flight_icao) !== callsign
+      !callsignCandidates(callsign).includes(sanitizeCode(flight.flight_icao))
     ) {
       return json(
         {
