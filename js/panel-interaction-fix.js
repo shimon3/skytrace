@@ -14,7 +14,10 @@ if (panel) {
 
 if (routeButton) {
   routeButton.type = 'button';
-  routeButton.setAttribute('aria-pressed', routeButton.classList.contains('active') ? 'true' : 'false');
+  routeButton.setAttribute(
+    'aria-pressed',
+    routeButton.classList.contains('active') ? 'true' : 'false'
+  );
   routeButton.addEventListener('click', () => {
     requestAnimationFrame(() => {
       routeButton.setAttribute(
