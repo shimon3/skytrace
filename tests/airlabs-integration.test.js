@@ -13,7 +13,7 @@ const worker = await readFile(
 );
 
 const forbiddenSecretPatterns = [
-  /AIRLABS_API_KEY\s*=\s*['"][^'"]+['"]/, 
+  /AIRLABS_API_KEY\s*=\s*['"][^'"]+['"]/,
   /api_key=[A-Za-z0-9_-]{12,}/,
 ];
 
