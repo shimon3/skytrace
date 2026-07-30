@@ -43,55 +43,28 @@
     </div>
     <div id="zones-panel">
       <div class="zones-title" data-i18n="zones_title">Explorer un continent</div>
-      <button class="zone-btn" data-region="Europe">
-        🇪🇺 <span data-i18n="cont_europe">Europe</span>
-      </button>
-      <button class="zone-btn" data-region="Moyen-Orient">
-        🕌 <span data-i18n="cont_me">Moyen-Orient</span>
-      </button>
-      <button class="zone-btn" data-region="Afrique">
-        🌍 <span data-i18n="cont_africa">Afrique</span>
-      </button>
-      <button class="zone-btn" data-region="Asie">
-        🌏 <span data-i18n="cont_asia">Asie</span>
-      </button>
-      <button class="zone-btn" data-region="Océanie">
-        🌊 <span data-i18n="cont_oceania">Océanie</span>
-      </button>
-      <button class="zone-btn" data-region="Amérique du Nord">
-        🗽 <span data-i18n="cont_na">Amérique du Nord</span>
-      </button>
-      <button class="zone-btn" data-region="Amérique du Sud">
-        🌎 <span data-i18n="cont_sa">Amérique du Sud</span>
-      </button>
-      <button
-        id="zone-clear"
-        class="toolbtn small"
-        style="width: 100%; margin-top: 8px"
-        data-i18n="btn_resume"
-      >
+      <button class="zone-btn" data-region="Europe">🇪🇺 <span data-i18n="cont_europe">Europe</span></button>
+      <button class="zone-btn" data-region="Moyen-Orient">🕌 <span data-i18n="cont_me">Moyen-Orient</span></button>
+      <button class="zone-btn" data-region="Afrique">🌍 <span data-i18n="cont_africa">Afrique</span></button>
+      <button class="zone-btn" data-region="Asie">🌏 <span data-i18n="cont_asia">Asie</span></button>
+      <button class="zone-btn" data-region="Océanie">🌊 <span data-i18n="cont_oceania">Océanie</span></button>
+      <button class="zone-btn" data-region="Amérique du Nord">🗽 <span data-i18n="cont_na">Amérique du Nord</span></button>
+      <button class="zone-btn" data-region="Amérique du Sud">🌎 <span data-i18n="cont_sa">Amérique du Sud</span></button>
+      <button id="zone-clear" class="toolbtn small" style="width: 100%; margin-top: 8px" data-i18n="btn_resume">
         REPRENDRE LA ROTATION MONDIALE
       </button>
     </div>
     <div id="filters-panel">
       <div class="filter-row">
-        <label data-i18n="filter_alt_min">Altitude min (m)</label
-        ><input type="number" id="f-alt-min" placeholder="0" min="0" step="500" />
+        <label data-i18n="filter_alt_min">Altitude min (m)</label><input type="number" id="f-alt-min" placeholder="0" min="0" step="500" />
       </div>
       <div class="filter-row">
-        <label data-i18n="filter_alt_max">Altitude max (m)</label
-        ><input type="number" id="f-alt-max" placeholder="15000" min="0" step="500" />
+        <label data-i18n="filter_alt_max">Altitude max (m)</label><input type="number" id="f-alt-max" placeholder="15000" min="0" step="500" />
       </div>
       <div class="filter-row checkbox-row">
-        <input type="checkbox" id="f-hide-ground" /><label
-          for="f-hide-ground"
-          data-i18n="filter_hide_ground"
-          >Masquer les avions au sol</label
-        >
+        <input type="checkbox" id="f-hide-ground" /><label for="f-hide-ground" data-i18n="filter_hide_ground">Masquer les avions au sol</label>
       </div>
-      <div class="filter-row">
-        <button id="f-reset" class="toolbtn small" data-i18n="btn_reset">RÉINITIALISER</button>
-      </div>
+      <div class="filter-row"><button id="f-reset" class="toolbtn small" data-i18n="btn_reset">RÉINITIALISER</button></div>
     </div>
     <div id="panel" role="dialog" aria-label="Détails de l’avion">
       <img id="p-photo" style="display: none" alt="Photo de l’avion" />
@@ -101,73 +74,34 @@
         <span id="p-type-badge" style="display: none"></span>
       </div>
       <div id="panel-body">
-        <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">🆔</span><span data-i18n="lbl_reg">Immatriculation</span></span
-          ><span id="p-registration">—</span>
-        </div>
-        <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">▲</span><span data-i18n="lbl_alt">Altitude</span></span
-          ><span id="p-alt">—</span>
-        </div>
-        <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">➤</span><span data-i18n="lbl_speed">Vitesse</span></span
-          ><span id="p-speed">—</span>
-        </div>
-        <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">⟳</span><span data-i18n="lbl_heading">Cap</span></span
-          ><span id="p-heading">—</span>
-        </div>
-        <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">↕</span><span data-i18n="lbl_vrate">Vitesse vert.</span></span
-          ><span id="p-vrate">—</span>
-        </div>
-        <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">◈</span><span data-i18n="lbl_squawk">Transpondeur</span></span
-          ><span id="p-squawk">—</span>
-        </div>
-        <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">◎</span><span data-i18n="lbl_pos">Position</span></span
-          ><span id="p-pos">—</span>
-        </div>
+        <div class="row"><span class="rlabel"><span class="ricon">🆔</span><span data-i18n="lbl_reg">Immatriculation</span></span><span id="p-registration">—</span></div>
+        <div class="row"><span class="rlabel"><span class="ricon">▲</span><span data-i18n="lbl_alt">Altitude</span></span><span id="p-alt">—</span></div>
+        <div class="row"><span class="rlabel"><span class="ricon">➤</span><span data-i18n="lbl_speed">Vitesse</span></span><span id="p-speed">—</span></div>
+        <div class="row"><span class="rlabel"><span class="ricon">⟳</span><span data-i18n="lbl_heading">Cap</span></span><span id="p-heading">—</span></div>
+        <div class="row"><span class="rlabel"><span class="ricon">↕</span><span data-i18n="lbl_vrate">Vitesse vert.</span></span><span id="p-vrate">—</span></div>
+        <div class="row"><span class="rlabel"><span class="ricon">◈</span><span data-i18n="lbl_squawk">Transpondeur</span></span><span id="p-squawk">—</span></div>
+        <div class="row"><span class="rlabel"><span class="ricon">◎</span><span data-i18n="lbl_pos">Position</span></span><span id="p-pos">—</span></div>
       </div>
       <div class="panel-actions">
-        <button id="btn-follow" class="toolbtn small" data-i18n="btn_follow">SUIVRE</button
-        ><button id="btn-route" class="toolbtn small" data-i18n="btn_route">TRAJECTOIRE</button
-        ><button id="btn-share" class="toolbtn small" data-i18n="btn_share">PARTAGER</button>
+        <button id="btn-follow" class="toolbtn small" type="button" data-i18n="btn_follow">SUIVRE</button>
+        <button id="btn-route" class="toolbtn small" type="button" data-i18n="btn_route">TRAJECTOIRE</button>
+        <button id="btn-share" class="toolbtn small" type="button" data-i18n="btn_share">PARTAGER</button>
       </div>
       <div id="route-info"></div>
     </div>
     <div id="legend">
-      <div class="legend-item">
-        <span class="legend-swatch" style="background: #2fe6a8"></span
-        ><span data-i18n="legend_cruise">Croisière (&gt;8000m)</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-swatch" style="background: #f5b942"></span
-        ><span data-i18n="legend_mid">Moyenne altitude</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-swatch" style="background: #ff4d6d"></span
-        ><span data-i18n="legend_low">Décollage/atterrissage</span>
-      </div>
+      <div class="legend-item"><span class="legend-swatch" style="background: #2fe6a8"></span><span data-i18n="legend_cruise">Croisière (&gt;8000m)</span></div>
+      <div class="legend-item"><span class="legend-swatch" style="background: #f5b942"></span><span data-i18n="legend_mid">Moyenne altitude</span></div>
+      <div class="legend-item"><span class="legend-swatch" style="background: #ff4d6d"></span><span data-i18n="legend_low">Décollage/atterrissage</span></div>
     </div>
     <div id="attribution-note" data-i18n="attribution">
-      Données: airplanes.live · Photos: planespotters.net · Les positions entre deux mises à jour
-      sont estimées
+      Données: airplanes.live · Photos: planespotters.net · Les positions entre deux mises à jour sont estimées
     </div>
     <div id="lang-switcher">
-      <button class="lang-btn" data-lang="fr">Français</button
-      ><button class="lang-btn" data-lang="en">English</button
-      ><button class="lang-btn" data-lang="he">עברית</button>
+      <button class="lang-btn" data-lang="fr">Français</button><button class="lang-btn" data-lang="en">English</button><button class="lang-btn" data-lang="he">עברית</button>
     </div>
     <script type="module" src="app.js"></script>
     <script type="module" src="js/flight-status-integration.js"></script>
+    <script type="module" src="js/panel-interaction-fix.js"></script>
   </body>
 </html>
