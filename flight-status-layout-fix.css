@@ -1,0 +1,39 @@
+.flight-status-grid > div {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  min-height: 0;
+  padding: 11px 12px;
+}
+
+.flight-status-grid > div > span {
+  width: 100%;
+  color: #b8c5d8;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: start;
+}
+
+.flight-status-grid > div b {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.flight-status-grid .flight-status-punctuality b {
+  font-size: 14px;
+}
+
+@media (min-width: 1200px) {
+  .flight-status-grid > div {
+    padding: 10px 12px;
+  }
+}
