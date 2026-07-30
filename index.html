@@ -138,9 +138,15 @@
         </div>
       </div>
       <div class="panel-actions">
-        <button id="btn-follow" class="toolbtn small" data-i18n="btn_follow">SUIVRE</button
-        ><button id="btn-route" class="toolbtn small" data-i18n="btn_route">TRAJECTOIRE</button
-        ><button id="btn-share" class="toolbtn small" data-i18n="btn_share">PARTAGER</button>
+        <button id="btn-follow" class="toolbtn small" type="button" data-i18n="btn_follow">
+          SUIVRE
+        </button>
+        <button id="btn-route" class="toolbtn small" type="button" data-i18n="btn_route">
+          TRAJECTOIRE
+        </button>
+        <button id="btn-share" class="toolbtn small" type="button" data-i18n="btn_share">
+          PARTAGER
+        </button>
       </div>
       <div id="route-info"></div>
     </div>
@@ -169,5 +175,6 @@
     </div>
     <script type="module" src="app.js"></script>
     <script type="module" src="js/flight-status-integration.js"></script>
+    <script type="module" src="js/panel-interaction-fix.js"></script>
   </body>
 </html>
