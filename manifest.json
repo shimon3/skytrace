@@ -1,0 +1,33 @@
+{
+  "name": "SkyTrace — Suivi des vols en direct",
+  "short_name": "SkyTrace",
+  "description": "Carte web qui affiche des aéronefs en direct à partir de données ADS-B publiques.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "lang": "fr",
+  "background_color": "#0d1119",
+  "theme_color": "#0d1119",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
