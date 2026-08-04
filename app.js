@@ -409,4 +409,28 @@ fetchTick();
 setInterval(fetchTick, TICK_MS);
 setInterval(updateLastDataAge, 1000);
 animationFrame = requestAnimationFrame(render);
+
+if (window.L?.DomEvent) {
+  L.DomEvent.disableClickPropagation(elements.panel);
+  L.DomEvent.disableScrollPropagation(elements.panel);
+}
+elements.panel.addEventListener('pointerdown', (event) => event.stopPropagation());
+elements.panel.addEventListener('touchstart', (event) => event.stopPropagation(), {
+  passive: true,
+});
+elements.panel.addEventListener('wheel', (event) => event.stopPropagation(), { passive: true });
+
+const routeButton = document.getElementById('btn-route');
+routeButton.setAttribute(
+  'aria-pressed',
+  routeButton.classList.contains('active') ? 'true' : 'false'
+);
+routeButton.addEventListener('click', () => {
+  requestAnimationFrame(() => {
+    routeButton.setAttribute(
+      'aria-pressed',
+      routeButton.classList.contains('active') ? 'true' : 'false'
+    );
+  });
+});
 window.addEventListener('beforeunload', () => cancelAnimationFrame(animationFrame));
