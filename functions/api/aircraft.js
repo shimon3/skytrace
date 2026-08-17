@@ -10,7 +10,8 @@ import {
 
 const AIRPLANES_LIVE_BASE = 'https://api.airplanes.live/v2/point';
 const ADSB_LOL_BASE = 'https://api.adsb.lol/v2/point';
-const CACHE_TTL_SECONDS = 300;
+const BROAD_CACHE_TTL_SECONDS = 300;
+const DETAIL_CACHE_TTL_SECONDS = 120;
 const STALE_TTL_SECONDS = 1800;
 const UPSTREAM_TIMEOUT_MS = 10000;
 const COORDINATE_BUCKET_DEGREES = 0.5;
@@ -95,6 +96,7 @@ async function fetchProvider(provider, upstreamUrl, context, origin) {
         ok: false,
         status: response.status,
         retryAfter: response.headers.get('retry-after'),
+        provider,
       };
     }
 
@@ -114,6 +116,7 @@ export async function onRequestGet(context) {
   const lon = parseNumber(url.searchParams.get('lon'));
   const radius = parseNumber(url.searchParams.get('radius'));
   const preferAdsbLol = url.searchParams.get('prefer') === 'adsb.lol';
+  const detailed = url.searchParams.get('detail') === '1';
 
   if (
     lat == null ||
@@ -132,11 +135,14 @@ export async function onRequestGet(context) {
   const normalizedLat = bucketCoordinate(lat).toFixed(2);
   const normalizedLon = bucketCoordinate(lon).toFixed(2);
   const normalizedRadius = Math.round(radius);
+  const cacheTtlSeconds = detailed ? DETAIL_CACHE_TTL_SECONDS : BROAD_CACHE_TTL_SECONDS;
 
   const cacheKeyUrl = new URL(url.origin + '/api/aircraft');
   cacheKeyUrl.searchParams.set('lat', normalizedLat);
   cacheKeyUrl.searchParams.set('lon', normalizedLon);
   cacheKeyUrl.searchParams.set('radius', String(normalizedRadius));
+  cacheKeyUrl.searchParams.set('freshness', detailed ? 'detail' : 'broad');
+
   const staleKeyUrl = new URL(cacheKeyUrl);
   staleKeyUrl.pathname = '/api/aircraft-stale';
 
@@ -157,8 +163,6 @@ export async function onRequestGet(context) {
     });
   }
 
-  // Rate limiting applies only to cache misses, so cached traffic remains cheap
-  // while abusive clients cannot continuously force new upstream requests.
   if (!(await consumeRateLimit(context.request, url.origin))) {
     return jsonResponse({ error: 'RATE_LIMITED' }, 429, { 'retry-after': '60' });
   }
@@ -228,7 +232,7 @@ export async function onRequestGet(context) {
     status: 200,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': `public, max-age=${CACHE_TTL_SECONDS}`,
+      'cache-control': `public, max-age=${cacheTtlSeconds}`,
       'x-skytrace-provider': result.provider,
     },
   });
