@@ -5,6 +5,11 @@ export const feetPerMinuteToMetersPerSecond = (value) => value * 0.00508;
 export function normalizeAircraft(raw, now = Date.now()) {
   const altitudeSource =
     raw.alt_baro !== 'ground' && raw.alt_baro != null ? raw.alt_baro : raw.alt_geom;
+  const seenPositionSeconds = Number(raw.seen_pos);
+  const positionAgeMs = Number.isFinite(seenPositionSeconds)
+    ? Math.max(0, seenPositionSeconds) * 1000
+    : 0;
+
   return {
     id: raw.hex,
     callsign: (raw.flight || '').trim(),
@@ -18,7 +23,7 @@ export function normalizeAircraft(raw, now = Date.now()) {
     heading: raw.track ?? null,
     vrate: raw.baro_rate != null ? feetPerMinuteToMetersPerSecond(raw.baro_rate) : null,
     squawk: raw.squawk || '',
-    lastSeen: now,
+    lastSeen: now - positionAgeMs,
   };
 }
 
