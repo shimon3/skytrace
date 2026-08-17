@@ -14,6 +14,7 @@ const CACHE_TTL_SECONDS = 300;
 const STALE_TTL_SECONDS = 1800;
 const UPSTREAM_TIMEOUT_MS = 10000;
 const COORDINATE_BUCKET_DEGREES = 0.5;
+const RATE_LIMIT_PER_MINUTE = 60;
 
 function jsonResponse(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
@@ -37,6 +38,33 @@ function bucketCoordinate(value) {
 
 function validAircraftPayload(payload) {
   return payload && typeof payload === 'object' && Array.isArray(payload.ac);
+}
+
+async function consumeRateLimit(request, origin) {
+  const clientIp = request.headers.get('cf-connecting-ip') || 'unknown';
+  const minute = Math.floor(Date.now() / 60000);
+  const key = new Request(
+    `${origin}/__skytrace_rate_limit/${encodeURIComponent(clientIp)}/${minute}`,
+    { method: 'GET' }
+  );
+  const cache = caches.default;
+  const existing = await cache.match(key);
+  let count = 0;
+
+  if (existing) {
+    const value = Number(await existing.text());
+    count = Number.isFinite(value) ? value : 0;
+  }
+
+  if (count >= RATE_LIMIT_PER_MINUTE) return false;
+
+  await cache.put(
+    key,
+    new Response(String(count + 1), {
+      headers: { 'cache-control': 'public, max-age=70' },
+    })
+  );
+  return true;
 }
 
 async function fetchProvider(provider, upstreamUrl, context, origin) {
@@ -127,6 +155,12 @@ export async function onRequestGet(context) {
         'x-skytrace-cache': 'HIT',
       },
     });
+  }
+
+  // Rate limiting applies only to cache misses, so cached traffic remains cheap
+  // while abusive clients cannot continuously force new upstream requests.
+  if (!(await consumeRateLimit(context.request, url.origin))) {
+    return jsonResponse({ error: 'RATE_LIMITED' }, 429, { 'retry-after': '60' });
   }
 
   const stale = await cache.match(staleKey);
