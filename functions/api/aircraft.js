@@ -1,3 +1,4 @@
+import { providerEnabled } from '../lib/provider-controls.js';
 import {
   getDailyLimit,
   readStats,
@@ -170,6 +171,10 @@ export async function onRequestGet(context) {
   const stale = await cache.match(staleKey);
   const stats = await readStats(context.env, utcDay(), url.origin);
   const dailyLimit = getDailyLimit();
+  const [adsbEnabled, airplanesEnabled] = await Promise.all([
+    providerEnabled(context.env, 'adsb.lol', url.origin),
+    providerEnabled(context.env, 'airplanes.live', url.origin),
+  ]);
   const adsbUrl = `${ADSB_LOL_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
   const airplanesUrl = `${AIRPLANES_LIVE_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
 
@@ -177,32 +182,30 @@ export async function onRequestGet(context) {
   let retryAfter = null;
 
   if (preferAdsbLol) {
-    const primary = await fetchProvider('adsb.lol', adsbUrl, context, url.origin);
-    if (primary.ok) {
-      result = primary;
-    } else if (stats.airplanesLiveRequests < dailyLimit) {
+    if (adsbEnabled) {
+      const primary = await fetchProvider('adsb.lol', adsbUrl, context, url.origin);
+      if (primary.ok) result = primary;
+    }
+    if (!result && airplanesEnabled && stats.airplanesLiveRequests < dailyLimit) {
       context.waitUntil(recordFallbackActivation(context.env, url.origin));
       const fallback = await fetchProvider('airplanes.live', airplanesUrl, context, url.origin);
       retryAfter = fallback.retryAfter;
       if (fallback.ok) result = fallback;
-    } else {
+    } else if (!result && airplanesEnabled && stats.airplanesLiveRequests >= dailyLimit) {
       context.waitUntil(recordQuotaBlocked(context.env, url.origin));
     }
   } else {
-    if (stats.airplanesLiveRequests < dailyLimit) {
+    if (airplanesEnabled && stats.airplanesLiveRequests < dailyLimit) {
       const primary = await fetchProvider('airplanes.live', airplanesUrl, context, url.origin);
       retryAfter = primary.retryAfter;
-      if (primary.ok) {
-        result = primary;
-      } else {
-        context.waitUntil(recordFallbackActivation(context.env, url.origin));
-      }
-    } else {
+      if (primary.ok) result = primary;
+      else if (adsbEnabled) context.waitUntil(recordFallbackActivation(context.env, url.origin));
+    } else if (airplanesEnabled && stats.airplanesLiveRequests >= dailyLimit) {
       context.waitUntil(recordQuotaBlocked(context.env, url.origin));
-      context.waitUntil(recordFallbackActivation(context.env, url.origin));
+      if (adsbEnabled) context.waitUntil(recordFallbackActivation(context.env, url.origin));
     }
 
-    if (!result) {
+    if (!result && adsbEnabled) {
       const fallback = await fetchProvider('adsb.lol', adsbUrl, context, url.origin);
       if (fallback.ok) result = fallback;
     }
