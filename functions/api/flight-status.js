@@ -1,3 +1,5 @@
+import { recordProviderRequest } from '../lib/stats.js';
+
 const AIRLABS_ENDPOINT = 'https://airlabs.co/api/v9/flight';
 const AIRLABS_LIVE_ENDPOINT = 'https://airlabs.co/api/v9/flights';
 const CACHE_SECONDS = 300;
@@ -7,8 +9,7 @@ function json(payload, status = 200, extraHeaders = {}) {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control':
-        status === 200 ? `public, max-age=60, s-maxage=${CACHE_SECONDS}` : 'no-store',
+      'Cache-Control': status === 200 ? `public, max-age=60, s-maxage=${CACHE_SECONDS}` : 'no-store',
       'X-Content-Type-Options': 'nosniff',
       ...extraHeaders,
     },
@@ -68,14 +69,23 @@ function normalizeFlight(flight) {
   };
 }
 
-async function requestAirLabs(apiKey, parameter, code) {
+async function trackedFetch(url, context) {
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    context.waitUntil(recordProviderRequest(context.env, response.status, new URL(context.request.url).origin, 'airlabs'));
+    return response;
+  } catch (error) {
+    context.waitUntil(recordProviderRequest(context.env, 599, new URL(context.request.url).origin, 'airlabs'));
+    throw error;
+  }
+}
+
+async function requestAirLabs(apiKey, parameter, code, context) {
   const upstream = new URL(AIRLABS_ENDPOINT);
   upstream.searchParams.set(parameter, code);
   upstream.searchParams.set('api_key', apiKey);
 
-  const response = await fetch(upstream, {
-    headers: { Accept: 'application/json' },
-  });
+  const response = await trackedFetch(upstream, context);
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -83,101 +93,72 @@ async function requestAirLabs(apiKey, parameter, code) {
     throw new Error(message);
   }
 
-  if (payload?.error) {
-    throw new Error(payload.error.message || 'AirLabs returned an error');
-  }
-
+  if (payload?.error) throw new Error(payload.error.message || 'AirLabs returned an error');
   return payload?.response || null;
 }
 
-async function requestLiveFlightByRegistration(apiKey, registration) {
+async function requestLiveFlightByRegistration(apiKey, registration, context) {
   if (!registration) return null;
 
   const upstream = new URL(AIRLABS_LIVE_ENDPOINT);
   upstream.searchParams.set('reg_number', registration);
   upstream.searchParams.set('api_key', apiKey);
 
-  const response = await fetch(upstream, {
-    headers: { Accept: 'application/json' },
-  });
+  const response = await trackedFetch(upstream, context);
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     const message = payload?.error?.message || `AirLabs HTTP ${response.status}`;
     throw new Error(message);
   }
-
-  if (payload?.error) {
-    throw new Error(payload.error.message || 'AirLabs returned an error');
-  }
+  if (payload?.error) throw new Error(payload.error.message || 'AirLabs returned an error');
 
   const flights = Array.isArray(payload?.response) ? payload.response : [];
   const exact = flights.filter((flight) => sanitizeCode(flight.reg_number) === registration);
-
   return exact.sort((a, b) => Number(b.updated || 0) - Number(a.updated || 0))[0] || null;
 }
 
 function callsignCandidates(callsign) {
   const candidates = [callsign];
   const withoutOperationalSuffix = callsign.match(/^([A-Z]{3}\d{1,4})[A-Z]$/)?.[1];
-  if (withoutOperationalSuffix && withoutOperationalSuffix !== callsign) {
-    candidates.push(withoutOperationalSuffix);
-  }
+  if (withoutOperationalSuffix && withoutOperationalSuffix !== callsign) candidates.push(withoutOperationalSuffix);
   return [...new Set(candidates)];
 }
 
-async function resolveFlight(apiKey, callsign, registration) {
+async function resolveFlight(apiKey, callsign, registration, context) {
   for (const candidate of callsignCandidates(callsign)) {
-    const flight = await requestAirLabs(apiKey, 'flight_icao', candidate);
+    const flight = await requestAirLabs(apiKey, 'flight_icao', candidate, context);
     if (flight) return flight;
   }
 
   if (/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(callsign)) {
-    const flight = await requestAirLabs(apiKey, 'flight_iata', callsign);
+    const flight = await requestAirLabs(apiKey, 'flight_iata', callsign, context);
     if (flight) return flight;
   }
 
-  const liveFlight = await requestLiveFlightByRegistration(apiKey, registration);
+  const liveFlight = await requestLiveFlightByRegistration(apiKey, registration, context);
   if (!liveFlight) return null;
 
   if (liveFlight.flight_icao) {
-    const detailed = await requestAirLabs(apiKey, 'flight_icao', liveFlight.flight_icao);
+    const detailed = await requestAirLabs(apiKey, 'flight_icao', liveFlight.flight_icao, context);
     if (detailed) return detailed;
   }
-
   if (liveFlight.flight_iata) {
-    const detailed = await requestAirLabs(apiKey, 'flight_iata', liveFlight.flight_iata);
+    const detailed = await requestAirLabs(apiKey, 'flight_iata', liveFlight.flight_iata, context);
     if (detailed) return detailed;
   }
-
   return liveFlight;
 }
 
 export async function onRequestGet(context) {
   const apiKey = context.env.AIRLABS_API_KEY;
-  if (!apiKey) {
-    return json(
-      {
-        error: 'AirLabs is not configured on this deployment.',
-        code: 'AIRLABS_NOT_CONFIGURED',
-      },
-      503
-    );
-  }
+  if (!apiKey) return json({ error: 'AirLabs is not configured on this deployment.', code: 'AIRLABS_NOT_CONFIGURED' }, 503);
 
   const requestUrl = new URL(context.request.url);
   const callsign = sanitizeCode(requestUrl.searchParams.get('callsign'));
   const registration = sanitizeCode(requestUrl.searchParams.get('registration'));
 
-  if (callsign.length < 3) {
-    return json(
-      {
-        error: 'A valid flight callsign is required.',
-        code: 'INVALID_CALLSIGN',
-      },
-      400
-    );
-  }
+  if (callsign.length < 3) return json({ error: 'A valid flight callsign is required.', code: 'INVALID_CALLSIGN' }, 400);
 
   const cacheUrl = new URL(requestUrl.origin + requestUrl.pathname);
   cacheUrl.searchParams.set('callsign', callsign);
@@ -188,43 +169,17 @@ export async function onRequestGet(context) {
   if (cached) return cached;
 
   try {
-    const flight = await resolveFlight(apiKey, callsign, registration);
+    const flight = await resolveFlight(apiKey, callsign, registration, context);
+    if (!flight) return json({ error: 'No commercial schedule was found for this aircraft.', code: 'FLIGHT_NOT_FOUND' }, 404);
 
-    if (!flight) {
-      return json(
-        {
-          error: 'No commercial schedule was found for this aircraft.',
-          code: 'FLIGHT_NOT_FOUND',
-        },
-        404
-      );
-    }
-
-    if (
-      registration &&
-      flight.reg_number &&
-      sanitizeCode(flight.reg_number) !== registration &&
-      !callsignCandidates(callsign).includes(sanitizeCode(flight.flight_icao))
-    ) {
-      return json(
-        {
-          error: 'The AirLabs flight does not match the selected aircraft.',
-          code: 'FLIGHT_MISMATCH',
-        },
-        409
-      );
+    if (registration && flight.reg_number && sanitizeCode(flight.reg_number) !== registration && !callsignCandidates(callsign).includes(sanitizeCode(flight.flight_icao))) {
+      return json({ error: 'The AirLabs flight does not match the selected aircraft.', code: 'FLIGHT_MISMATCH' }, 409);
     }
 
     const response = json({ flight: normalizeFlight(flight), source: 'AirLabs' });
     context.waitUntil(cache.put(cacheKey, response.clone()));
     return response;
   } catch (error) {
-    return json(
-      {
-        error: error instanceof Error ? error.message : 'Unable to contact AirLabs.',
-        code: 'AIRLABS_REQUEST_FAILED',
-      },
-      502
-    );
+    return json({ error: error instanceof Error ? error.message : 'Unable to contact AirLabs.', code: 'AIRLABS_REQUEST_FAILED' }, 502);
   }
 }
