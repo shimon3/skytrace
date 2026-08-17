@@ -13,6 +13,10 @@ export function emptyStats(day = utcDay()) {
     failures: 0,
     cacheHits: 0,
     quotaBlocked: 0,
+    airplanesLiveRequests: 0,
+    adsbLolRequests: 0,
+    fallbackActivations: 0,
+    lastProvider: null,
     lastRequestAt: null,
     lastStatus: null,
   };
@@ -83,11 +87,24 @@ export async function recordQuotaBlocked(env, origin) {
   return stats;
 }
 
-export async function recordUpstreamRequest(env, status, origin) {
+export async function recordFallbackActivation(env, origin) {
+  const stats = await readStats(env, utcDay(), origin);
+  stats.fallbackActivations += 1;
+  await writeStats(env, stats, origin);
+  return stats;
+}
+
+export async function recordUpstreamRequest(env, status, origin, provider = 'unknown') {
   const stats = await readStats(env, utcDay(), origin);
   stats.requests += 1;
+
+  if (provider === 'airplanes.live') stats.airplanesLiveRequests += 1;
+  if (provider === 'adsb.lol') stats.adsbLolRequests += 1;
+
   if (status >= 200 && status < 300) stats.successes += 1;
   else stats.failures += 1;
+
+  stats.lastProvider = provider;
   stats.lastRequestAt = new Date().toISOString();
   stats.lastStatus = status;
   await writeStats(env, stats, origin);
