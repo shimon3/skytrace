@@ -62,7 +62,9 @@ async function providerAction(provider, action) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (payload.error === 'AT_LEAST_ONE_POSITION_PROVIDER_REQUIRED') {
-        throw new Error('Impossible de suspendre ce service : au moins une source de positions doit rester active.');
+        throw new Error(
+          'Impossible de suspendre ce service : au moins une source de positions doit rester active.'
+        );
       }
       if (payload.error === 'NOT_CONFIGURED') throw new Error('Ce service n’est pas configuré.');
       throw new Error(payload.error || `Erreur ${response.status}`);
@@ -111,9 +113,15 @@ function renderProviders(providers = []) {
             : '<button type="button" class="provider-enable">Réactiver maintenant</button>'
         }
       </div>`;
-    card.querySelector('.provider-test').addEventListener('click', () => providerAction(provider.id, 'test'));
-    card.querySelector('.provider-pause')?.addEventListener('click', () => providerAction(provider.id, 'pause'));
-    card.querySelector('.provider-enable')?.addEventListener('click', () => providerAction(provider.id, 'enable'));
+    card
+      .querySelector('.provider-test')
+      .addEventListener('click', () => providerAction(provider.id, 'test'));
+    card
+      .querySelector('.provider-pause')
+      ?.addEventListener('click', () => providerAction(provider.id, 'pause'));
+    card
+      .querySelector('.provider-enable')
+      ?.addEventListener('click', () => providerAction(provider.id, 'enable'));
     providersBox.appendChild(card);
   }
 }
