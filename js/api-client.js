@@ -94,12 +94,17 @@ function cacheDurationForZoom(zoom) {
 
 export class AircraftApiClient {
   #lastSuccessfulUpdate = null;
+  #lastCoverageComplete = false;
   #backoffUntil = 0;
   #tileCache = new Map();
   #inFlight = new Map();
 
   get lastSuccessfulUpdate() {
     return this.#lastSuccessfulUpdate;
+  }
+
+  get lastCoverageComplete() {
+    return this.#lastCoverageComplete;
   }
 
   get backoffUntil() {
@@ -124,7 +129,14 @@ export class AircraftApiClient {
     const cached = this.#tileCache.get(key);
 
     if (cached && now - cached.at < cacheDurationMs) return cached.aircraft;
-    if (now < this.#backoffUntil || document.hidden) return cached?.aircraft || [];
+    if (document.hidden) {
+      if (cached) return cached.aircraft;
+      throw new Error('PAGE_HIDDEN');
+    }
+    if (now < this.#backoffUntil) {
+      if (cached) return cached.aircraft;
+      throw new Error('BACKOFF_ACTIVE');
+    }
     if (this.#inFlight.has(key)) return this.#inFlight.get(key);
 
     const request = (async () => {
@@ -188,6 +200,8 @@ export class AircraftApiClient {
     const deduplicated = new Map();
     let completedTiles = 0;
 
+    this.#lastCoverageComplete = false;
+
     const merge = (aircraftList) => {
       for (const aircraft of aircraftList) {
         const existing = deduplicated.get(aircraft.id);
@@ -217,6 +231,7 @@ export class AircraftApiClient {
     await Promise.all(Array.from({ length: workers }, () => worker()));
 
     if (completedTiles === 0) throw new Error('VIEWPORT_DATA_UNAVAILABLE');
+    this.#lastCoverageComplete = completedTiles === points.length;
     return [...deduplicated.values()];
   }
 }
