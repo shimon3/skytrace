@@ -10,6 +10,7 @@ const dailyChart = document.getElementById('daily-chart');
 
 let token = sessionStorage.getItem('skytrace-admin-token') || '';
 let autoRefreshTimer = null;
+let providerActionInProgress = false;
 
 function setText(id, value) {
   document.getElementById(id).textContent = String(value ?? '—');
@@ -29,9 +30,54 @@ function healthLabel(value) {
       degraded: 'Dégradé',
       unavailable: 'Indisponible',
       'not-configured': 'Non configuré',
+      paused: 'Suspendu',
       unknown: 'Pas encore testé',
     }[value] || value
   );
+}
+
+function tomorrowMidnightIso() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  date.setHours(0, 0, 0, 0);
+  return date.toISOString();
+}
+
+async function providerAction(provider, action) {
+  if (providerActionInProgress) return;
+  providerActionInProgress = true;
+  errorBox.textContent = '';
+  try {
+    const body = { provider, action };
+    if (action === 'pause') body.resumeAt = tomorrowMidnightIso();
+    const response = await fetch('/api/admin-provider-control', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (payload.error === 'AT_LEAST_ONE_POSITION_PROVIDER_REQUIRED') {
+        throw new Error('Impossible de suspendre ce service : au moins une source de positions doit rester active.');
+      }
+      if (payload.error === 'NOT_CONFIGURED') throw new Error('Ce service n’est pas configuré.');
+      throw new Error(payload.error || `Erreur ${response.status}`);
+    }
+    if (action === 'test') {
+      errorBox.textContent = payload.ok
+        ? `Test réussi pour ${provider} (HTTP ${payload.status}).`
+        : `Test échoué pour ${provider} (HTTP ${payload.status ?? '—'}).`;
+    }
+    await loadStats();
+  } catch (error) {
+    errorBox.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    providerActionInProgress = false;
+  }
 }
 
 function renderProviders(providers = []) {
@@ -39,6 +85,11 @@ function renderProviders(providers = []) {
   for (const provider of providers) {
     const card = document.createElement('article');
     card.className = 'provider';
+    const pauseText = provider.pausedUntil
+      ? `Reprise automatique : ${formatDate(provider.pausedUntil)}`
+      : provider.enabled
+        ? 'Service actif'
+        : 'Suspendu jusqu’à réactivation manuelle';
     card.innerHTML = `
       <div class="provider-head">
         <strong>${provider.label}</strong>
@@ -50,7 +101,19 @@ function renderProviders(providers = []) {
         <dt>Échecs</dt><dd>${provider.failures}</dd>
         <dt>Dernier HTTP</dt><dd>${provider.lastStatus ?? '—'}</dd>
         <dt>Dernier appel</dt><dd>${formatDate(provider.lastRequestAt)}</dd>
-      </dl>`;
+      </dl>
+      <p class="provider-control-state">${pauseText}</p>
+      <div class="provider-actions">
+        <button type="button" class="provider-test secondary">Tester maintenant</button>
+        ${
+          provider.enabled
+            ? '<button type="button" class="provider-pause danger">Suspendre jusqu’à demain</button>'
+            : '<button type="button" class="provider-enable">Réactiver maintenant</button>'
+        }
+      </div>`;
+    card.querySelector('.provider-test').addEventListener('click', () => providerAction(provider.id, 'test'));
+    card.querySelector('.provider-pause')?.addEventListener('click', () => providerAction(provider.id, 'pause'));
+    card.querySelector('.provider-enable')?.addEventListener('click', () => providerAction(provider.id, 'enable'));
     providersBox.appendChild(card);
   }
 }
@@ -70,7 +133,7 @@ function renderBars(container, data, labelKey) {
 
 async function loadStats() {
   if (!token) return;
-  errorBox.textContent = '';
+  if (!providerActionInProgress) errorBox.textContent = '';
 
   try {
     const response = await fetch('/api/admin-stats', {
