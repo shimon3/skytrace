@@ -1,3 +1,4 @@
+import { providerEnabled } from '../lib/provider-controls.js';
 import { recordProviderRequest } from '../lib/stats.js';
 
 const PHOTO_ENDPOINT = 'https://api.planespotters.net/pub/photos/reg';
@@ -27,6 +28,10 @@ export async function onRequestGet(context) {
   const requestUrl = new URL(context.request.url);
   const registration = sanitizeRegistration(requestUrl.searchParams.get('registration'));
   if (!registration) return json({ error: 'INVALID_REGISTRATION' }, 400);
+
+  if (!(await providerEnabled(context.env, 'planespotters.net', requestUrl.origin))) {
+    return json({ error: 'PROVIDER_PAUSED' }, 503);
+  }
 
   const cacheKey = new Request(
     `${requestUrl.origin}/api/photo?registration=${encodeURIComponent(registration)}`
