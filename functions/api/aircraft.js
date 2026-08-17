@@ -10,9 +10,9 @@ import {
 
 const AIRPLANES_LIVE_BASE = 'https://api.airplanes.live/v2/point';
 const ADSB_LOL_BASE = 'https://api.adsb.lol/v2/point';
-const CACHE_TTL_SECONDS = 180;
+const CACHE_TTL_SECONDS = 300;
 const UPSTREAM_TIMEOUT_MS = 10000;
-const COORDINATE_BUCKET_DEGREES = 0.25;
+const COORDINATE_BUCKET_DEGREES = 0.5;
 
 function jsonResponse(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
@@ -69,11 +69,11 @@ async function fetchProvider(provider, upstreamUrl, context, origin) {
       };
     }
 
-    return { ok: true, status: response.status, payload };
+    return { ok: true, status: response.status, payload, provider };
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'AbortError';
     context.waitUntil(recordUpstreamRequest(context.env, timedOut ? 598 : 599, origin, provider));
-    return { ok: false, status: timedOut ? 598 : 599 };
+    return { ok: false, status: timedOut ? 598 : 599, provider };
   } finally {
     clearTimeout(timeout);
   }
@@ -104,11 +104,13 @@ export async function onRequestGet(context) {
   const normalizedLon = bucketCoordinate(lon).toFixed(2);
   const normalizedRadius = Math.round(radius);
 
+  // Provider preference intentionally does not affect the cache key: both
+  // providers return the same aircraft payload shape, so all visitors and
+  // provider orders can reuse a single shared Cloudflare cache entry.
   const cacheKeyUrl = new URL(url.origin + '/api/aircraft');
   cacheKeyUrl.searchParams.set('lat', normalizedLat);
   cacheKeyUrl.searchParams.set('lon', normalizedLon);
   cacheKeyUrl.searchParams.set('radius', String(normalizedRadius));
-  cacheKeyUrl.searchParams.set('provider-order', preferAdsbLol ? 'adsb-first' : 'airplanes-first');
 
   const cacheKey = new Request(cacheKeyUrl.toString(), { method: 'GET' });
   const cache = caches.default;
@@ -121,6 +123,7 @@ export async function onRequestGet(context) {
       headers: {
         'content-type': cached.headers.get('content-type') || 'application/json; charset=utf-8',
         'cache-control': 'private, max-age=0',
+        'x-skytrace-cache': 'HIT',
       },
     });
   }
@@ -172,22 +175,23 @@ export async function onRequestGet(context) {
   }
 
   const body = JSON.stringify(result.payload);
-  const response = new Response(body, {
-    status: 200,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'private, max-age=0',
-    },
-  });
-
   const cacheResponse = new Response(body, {
     status: 200,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': `public, max-age=${CACHE_TTL_SECONDS}`,
+      'x-skytrace-provider': result.provider,
     },
   });
   context.waitUntil(cache.put(cacheKey, cacheResponse));
 
-  return response;
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'private, max-age=0',
+      'x-skytrace-cache': 'MISS',
+      'x-skytrace-provider': result.provider,
+    },
+  });
 }
