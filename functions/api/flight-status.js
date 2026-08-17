@@ -1,3 +1,4 @@
+import { providerEnabled } from '../lib/provider-controls.js';
 import { recordProviderRequest } from '../lib/stats.js';
 
 const AIRLABS_ENDPOINT = 'https://airlabs.co/api/v9/flight';
@@ -94,35 +95,22 @@ async function requestAirLabs(apiKey, parameter, code, context) {
   const upstream = new URL(AIRLABS_ENDPOINT);
   upstream.searchParams.set(parameter, code);
   upstream.searchParams.set('api_key', apiKey);
-
   const response = await trackedFetch(upstream, context);
   const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const message = payload?.error?.message || `AirLabs HTTP ${response.status}`;
-    throw new Error(message);
-  }
-
+  if (!response.ok) throw new Error(payload?.error?.message || `AirLabs HTTP ${response.status}`);
   if (payload?.error) throw new Error(payload.error.message || 'AirLabs returned an error');
   return payload?.response || null;
 }
 
 async function requestLiveFlightByRegistration(apiKey, registration, context) {
   if (!registration) return null;
-
   const upstream = new URL(AIRLABS_LIVE_ENDPOINT);
   upstream.searchParams.set('reg_number', registration);
   upstream.searchParams.set('api_key', apiKey);
-
   const response = await trackedFetch(upstream, context);
   const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const message = payload?.error?.message || `AirLabs HTTP ${response.status}`;
-    throw new Error(message);
-  }
+  if (!response.ok) throw new Error(payload?.error?.message || `AirLabs HTTP ${response.status}`);
   if (payload?.error) throw new Error(payload.error.message || 'AirLabs returned an error');
-
   const flights = Array.isArray(payload?.response) ? payload.response : [];
   const exact = flights.filter((flight) => sanitizeCode(flight.reg_number) === registration);
   return exact.sort((a, b) => Number(b.updated || 0) - Number(a.updated || 0))[0] || null;
@@ -141,15 +129,12 @@ async function resolveFlight(apiKey, callsign, registration, context) {
     const flight = await requestAirLabs(apiKey, 'flight_icao', candidate, context);
     if (flight) return flight;
   }
-
   if (/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(callsign)) {
     const flight = await requestAirLabs(apiKey, 'flight_iata', callsign, context);
     if (flight) return flight;
   }
-
   const liveFlight = await requestLiveFlightByRegistration(apiKey, registration, context);
   if (!liveFlight) return null;
-
   if (liveFlight.flight_icao) {
     const detailed = await requestAirLabs(apiKey, 'flight_icao', liveFlight.flight_icao, context);
     if (detailed) return detailed;
@@ -162,6 +147,11 @@ async function resolveFlight(apiKey, callsign, registration, context) {
 }
 
 export async function onRequestGet(context) {
+  const requestUrl = new URL(context.request.url);
+  if (!(await providerEnabled(context.env, 'airlabs', requestUrl.origin))) {
+    return json({ error: 'Commercial flight service is paused by administrator.', code: 'PROVIDER_PAUSED' }, 503);
+  }
+
   const apiKey = context.env.AIRLABS_API_KEY;
   if (!apiKey)
     return json(
@@ -169,10 +159,8 @@ export async function onRequestGet(context) {
       503
     );
 
-  const requestUrl = new URL(context.request.url);
   const callsign = sanitizeCode(requestUrl.searchParams.get('callsign'));
   const registration = sanitizeCode(requestUrl.searchParams.get('registration'));
-
   if (callsign.length < 3)
     return json({ error: 'A valid flight callsign is required.', code: 'INVALID_CALLSIGN' }, 400);
 
