@@ -85,20 +85,15 @@ function updateZoneLabel() {
   elements.zone.textContent = `${point.lat.toFixed(2)}, ${point.lon.toFixed(2)}`;
 }
 
-function clearCurrentAircraft() {
-  aircraftById.clear();
-  renderedAircraft = [];
-  planeLayer.setData([]);
-  elements.count.textContent = '0';
-  if (selectedId) closePanel();
-}
-
 async function fetchTick({ forceInitial = false } = {}) {
   const point = currentPoint();
   updateZoneLabel();
 
   try {
     const received = await api.fetchPoint(point, RADIUS_NM, { forceInitial });
+
+    // A throttled refresh returns null. Keep the last successful aircraft set
+    // on screen instead of clearing the map for up to three minutes.
     if (received == null) return;
 
     const now = Date.now();
@@ -233,11 +228,11 @@ map.on('click', (event) => {
 map.on('moveend', () => {
   updateZoneLabel();
   const point = currentPoint();
-  const viewKey = `${point.lat.toFixed(1)}:${point.lon.toFixed(1)}`;
-  if (viewKey !== lastViewKey) {
-    lastViewKey = viewKey;
-    clearCurrentAircraft();
-  }
+  lastViewKey = `${point.lat.toFixed(1)}:${point.lon.toFixed(1)}`;
+
+  // Do not clear aircraft here. fetchPoint() deliberately throttles real API
+  // requests to one every three minutes; clearing first made the UI show 0
+  // whenever the user panned before the next request was allowed.
   fetchTick();
 });
 
