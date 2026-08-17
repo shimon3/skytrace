@@ -53,7 +53,6 @@ export function viewportPoints(map, fallbackPoint) {
   if (east < west) east += 360;
 
   const centerLat = (south + north) / 2;
-  const centerLon = (west + east) / 2;
   const cosLat = Math.max(0.25, Math.cos((centerLat * Math.PI) / 180));
   const lonStep = GRID_STEP_LAT / cosLat;
   const latitudes = gridCenters(south, north, GRID_STEP_LAT);
@@ -74,8 +73,6 @@ export function viewportPoints(map, fallbackPoint) {
   const limit = lowZoomLimit(zoom);
   if (points.length <= limit) return points;
 
-  // At world/continent zooms, sample the full viewport uniformly rather than
-  // keeping only the center. This avoids making entire edges look empty.
   const selected = [];
   const stride = points.length / limit;
   for (let index = 0; index < limit; index += 1) {
