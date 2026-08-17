@@ -44,7 +44,8 @@ export async function onRequestGet(context) {
 
   const authorization = context.request.headers.get('authorization') || '';
   const providedToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
-  if (!constantTimeEqual(providedToken, configuredToken)) return jsonResponse({ error: 'UNAUTHORIZED' }, 401);
+  if (!constantTimeEqual(providedToken, configuredToken))
+    return jsonResponse({ error: 'UNAUTHORIZED' }, 401);
 
   const url = new URL(context.request.url);
   const day = utcDay();
