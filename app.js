@@ -114,7 +114,11 @@ function mergeAircraft(received, { replace = false } = {}) {
   const selectedBeforeReplace = selectedId ? aircraftById.get(selectedId) : null;
   if (replace) aircraftById.clear();
   for (const a of received || []) aircraftById.set(a.id, a);
-  if (selectedBeforeReplace && !aircraftById.has(selectedId) && now - selectedBeforeReplace.lastSeen <= STALE_MS) {
+  if (
+    selectedBeforeReplace &&
+    !aircraftById.has(selectedId) &&
+    now - selectedBeforeReplace.lastSeen <= STALE_MS
+  ) {
     aircraftById.set(selectedId, selectedBeforeReplace);
   }
   for (const [id, a] of aircraftById) {
@@ -191,7 +195,9 @@ function render(now) {
       }))
       .filter((a) => mapBounds.contains([a.lat, a.lon]) || a.id === selectedId);
     planeLayer.setData(renderedAircraft);
-    elements.count.textContent = renderedAircraft.filter((a) => mapBounds.contains([a.lat, a.lon])).length.toLocaleString(getLanguage());
+    elements.count.textContent = renderedAircraft
+      .filter((a) => mapBounds.contains([a.lat, a.lon]))
+      .length.toLocaleString(getLanguage());
 
     if (followEnabled && selectedId && now - lastFollowPanAt >= FOLLOW_PAN_INTERVAL_MS) {
       const a = renderedAircraft.find((i) => i.id === selectedId);
@@ -222,9 +228,12 @@ async function updatePanel(a) {
   badge.style.display = a.type ? 'inline-block' : 'none';
   elements.registration.textContent = a.registration || '—';
   document.getElementById('p-alt').textContent = a.alt == null ? '—' : `${Math.round(a.alt)} m`;
-  document.getElementById('p-speed').textContent = a.speed == null ? '—' : `${Math.round(a.speed * 3.6)} km/h`;
-  document.getElementById('p-heading').textContent = a.heading == null ? '—' : `${Math.round(a.heading)}°`;
-  document.getElementById('p-vrate').textContent = a.vrate == null ? '—' : `${a.vrate > 0 ? '+' : ''}${a.vrate.toFixed(1)} m/s`;
+  document.getElementById('p-speed').textContent =
+    a.speed == null ? '—' : `${Math.round(a.speed * 3.6)} km/h`;
+  document.getElementById('p-heading').textContent =
+    a.heading == null ? '—' : `${Math.round(a.heading)}°`;
+  document.getElementById('p-vrate').textContent =
+    a.vrate == null ? '—' : `${a.vrate > 0 ? '+' : ''}${a.vrate.toFixed(1)} m/s`;
   document.getElementById('p-squawk').textContent = a.squawk || '—';
   document.getElementById('p-pos').textContent = `${a.lat.toFixed(2)}, ${a.lon.toFixed(2)}`;
   const photo = await getAircraftPhoto(a.registration);
@@ -337,8 +346,14 @@ document.getElementById('btn-share').addEventListener('click', async (e) => {
   }
 });
 
-document.getElementById('zones-toggle').addEventListener('click', () => document.getElementById('zones-panel').classList.toggle('show'));
-document.getElementById('filters-toggle').addEventListener('click', () => document.getElementById('filters-panel').classList.toggle('show'));
+document
+  .getElementById('zones-toggle')
+  .addEventListener('click', () => document.getElementById('zones-panel').classList.toggle('show'));
+document
+  .getElementById('filters-toggle')
+  .addEventListener('click', () =>
+    document.getElementById('filters-panel').classList.toggle('show')
+  );
 document.querySelectorAll('.zone-btn').forEach((b) =>
   b.addEventListener('click', () => {
     const v = CONTINENT_VIEWS[b.dataset.region];
@@ -358,7 +373,9 @@ function refreshFilters() {
   filters.altMax = max === '' ? null : Number(max);
   filters.hideGround = document.getElementById('f-hide-ground').checked;
 }
-['f-alt-min', 'f-alt-max'].forEach((id) => document.getElementById(id).addEventListener('input', refreshFilters));
+['f-alt-min', 'f-alt-max'].forEach((id) =>
+  document.getElementById(id).addEventListener('input', refreshFilters)
+);
 document.getElementById('f-hide-ground').addEventListener('change', refreshFilters);
 document.getElementById('f-reset').addEventListener('click', () => {
   document.getElementById('f-alt-min').value = '';
@@ -383,13 +400,17 @@ elements.search.addEventListener('keydown', (e) => {
     map.flyTo([airport.lat, airport.lon], 9);
     return;
   }
-  const a = [...aircraftById.values()].find((i) => i.callsign.toUpperCase().includes(q) || i.registration.toUpperCase().includes(q));
+  const a = [...aircraftById.values()].find(
+    (i) => i.callsign.toUpperCase().includes(q) || i.registration.toUpperCase().includes(q)
+  );
   if (a) {
     selectAircraft(a);
     map.flyTo([a.lat, a.lon], Math.max(map.getZoom(), 6));
   }
 });
-document.querySelectorAll('.lang-btn').forEach((b) => b.addEventListener('click', () => applyLanguage(b.dataset.lang)));
+document
+  .querySelectorAll('.lang-btn')
+  .forEach((b) => b.addEventListener('click', () => applyLanguage(b.dataset.lang)));
 document.addEventListener('skytrace:languagechange', () => {
   updateRouteInfo(selectedId ? (trails[selectedId] || []).length : 0);
   const b = document.getElementById('zone-clear');
@@ -398,7 +419,9 @@ document.addEventListener('skytrace:languagechange', () => {
 const sharedPlane = new URLSearchParams(location.search).get('plane')?.toUpperCase();
 function checkSharedPlane() {
   if (!sharedPlane || selectedId) return;
-  const a = [...aircraftById.values()].find((i) => i.registration.toUpperCase() === sharedPlane || i.callsign.toUpperCase() === sharedPlane);
+  const a = [...aircraftById.values()].find(
+    (i) => i.registration.toUpperCase() === sharedPlane || i.callsign.toUpperCase() === sharedPlane
+  );
   if (a) {
     selectAircraft(a);
     map.flyTo([a.lat, a.lon], 7);
@@ -429,4 +452,8 @@ window.addEventListener('beforeunload', () => {
   cancelAnimationFrame(animationFrame);
 });
 if ('serviceWorker' in navigator)
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch((error) => console.error('Service worker registration failed:', error)));
+  window.addEventListener('load', () =>
+    navigator.serviceWorker
+      .register('/sw.js')
+      .catch((error) => console.error('Service worker registration failed:', error))
+  );
