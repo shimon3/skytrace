@@ -43,24 +43,29 @@ const PlaneLayer = L.Layer.extend({
     this._canvas.style.zIndex = 450;
     this._canvas.style.pointerEvents = 'none';
     map.getPanes().overlayPane.appendChild(this._canvas);
-    map.on('move zoom resize', this._reset, this);
+
+    // Do not rebuild the canvas on every frame of Leaflet's animated zoom.
+    // During the animation Leaflet temporarily transforms map panes; resetting
+    // the canvas at that moment can project aircraft outside the viewport.
+    map.on('moveend zoomend resize viewreset', this._reset, this);
     this._reset();
   },
   onRemove(map) {
     L.DomUtil.remove(this._canvas);
-    map.off('move zoom resize', this._reset, this);
+    map.off('moveend zoomend resize viewreset', this._reset, this);
   },
   setData(items) {
     this._items = items;
     this.draw();
   },
   _reset() {
+    if (!this._map || !this._canvas) return;
     const topLeft = this._map.containerPointToLayerPoint([0, 0]);
     this._topLeft = topLeft;
     L.DomUtil.setPosition(this._canvas, topLeft);
     const size = this._map.getSize();
-    this._canvas.width = size.x;
-    this._canvas.height = size.y;
+    this._canvas.width = Math.max(1, Math.round(size.x));
+    this._canvas.height = Math.max(1, Math.round(size.y));
     this.draw();
   },
   draw() {
@@ -75,13 +80,18 @@ const PlaneLayer = L.Layer.extend({
       if (!Number.isFinite(item.lat) || !Number.isFinite(item.lon)) continue;
       if (!bounds.contains([item.lat, item.lon])) continue;
 
-      // The canvas lives in Leaflet's overlay pane, so aircraft must be
-      // projected in layer coordinates and then made relative to the canvas.
-      // Using container coordinates here can offset every aircraft after a pan.
       const layerPoint = this._map.latLngToLayerPoint([item.lat, item.lon]);
       const point = layerPoint.subtract(topLeft);
-      const color = colorForAltitude(item.alt);
+      if (
+        point.x < -20 ||
+        point.y < -20 ||
+        point.x > this._canvas.width + 20 ||
+        point.y > this._canvas.height + 20
+      ) {
+        continue;
+      }
 
+      const color = colorForAltitude(item.alt);
       if (detailed || item.selected) {
         drawPlane(ctx, point.x, point.y, item.heading, color, item.selected);
       } else {
