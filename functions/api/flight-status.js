@@ -149,7 +149,10 @@ async function resolveFlight(apiKey, callsign, registration, context) {
 export async function onRequestGet(context) {
   const requestUrl = new URL(context.request.url);
   if (!(await providerEnabled(context.env, 'airlabs', requestUrl.origin))) {
-    return json({ error: 'Commercial flight service is paused by administrator.', code: 'PROVIDER_PAUSED' }, 503);
+    return json(
+      { error: 'Commercial flight service is paused by administrator.', code: 'PROVIDER_PAUSED' },
+      503
+    );
   }
 
   const apiKey = context.env.AIRLABS_API_KEY;

@@ -29,7 +29,9 @@ export async function onRequestGet(context) {
     return json({ error: 'PROVIDER_PAUSED' }, 503);
   }
 
-  const cacheKey = new Request(`${requestUrl.origin}/api/aircraft-photo?registration=${registration}`);
+  const cacheKey = new Request(
+    `${requestUrl.origin}/api/aircraft-photo?registration=${registration}`
+  );
   const cache = caches.default;
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
