@@ -115,10 +115,6 @@ export class AircraftApiClient {
     return `${point.lat.toFixed(2)}:${point.lon.toFixed(2)}:${RADIUS_NM}`;
   }
 
-  #cachedTile(point) {
-    return this.#tileCache.get(this.#tileKey(point));
-  }
-
   async #fetchTile(point) {
     const key = this.#tileKey(point);
     const now = Date.now();
