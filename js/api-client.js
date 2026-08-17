@@ -2,11 +2,10 @@ import { normalizeAircraft } from './flight-utils.js';
 
 const AIRCRAFT_API = '/api/aircraft';
 const PHOTO_API = 'https://api.planespotters.net/pub/photos/reg';
-const TILE_CACHE_MS = 180000;
+const TILE_CACHE_MS = 300000;
 const RADIUS_NM = 250;
-const GRID_STEP_LAT = 5.5;
-const MAX_VIEWPORT_POINTS = 30;
-const MAX_CONCURRENCY = 4;
+const BASE_GRID_STEP_LAT = 5.5;
+const MAX_CONCURRENCY = 3;
 
 function getErrorMessage(payload, fallback) {
   if (!payload || typeof payload !== 'object') return fallback;
@@ -24,10 +23,26 @@ function wrapLongitude(value) {
   return lon;
 }
 
+function snap(value, step) {
+  return Math.round(value / step) * step;
+}
+
+function maxPointsForZoom(zoom) {
+  if (zoom <= 3) return 6;
+  if (zoom === 4) return 8;
+  if (zoom === 5) return 10;
+  if (zoom === 6) return 8;
+  if (zoom === 7) return 6;
+  if (zoom === 8) return 4;
+  return 2;
+}
+
 function viewportPoints(map, fallbackPoint) {
   if (!map?.getBounds) return [fallbackPoint];
 
   const bounds = map.getBounds();
+  const zoom = map.getZoom?.() ?? 6;
+  const maxPoints = maxPointsForZoom(zoom);
   const south = clamp(bounds.getSouth(), -85, 85);
   const north = clamp(bounds.getNorth(), -85, 85);
   let west = bounds.getWest();
@@ -37,32 +52,41 @@ function viewportPoints(map, fallbackPoint) {
 
   const centerLat = (south + north) / 2;
   const cosLat = Math.max(0.25, Math.cos((centerLat * Math.PI) / 180));
-  const lonStep = GRID_STEP_LAT / cosLat;
+  const latStep = BASE_GRID_STEP_LAT;
+  const lonStep = BASE_GRID_STEP_LAT / cosLat;
 
-  const latSpan = Math.max(0.1, north - south);
-  const lonSpan = Math.max(0.1, east - west);
-  let rows = Math.max(1, Math.ceil(latSpan / GRID_STEP_LAT));
-  let cols = Math.max(1, Math.ceil(lonSpan / lonStep));
+  const startLat = snap(south, latStep);
+  const endLat = snap(north, latStep);
+  const startLon = snap(west, lonStep);
+  const endLon = snap(east, lonStep);
+  const candidates = [];
 
-  while (rows * cols > MAX_VIEWPORT_POINTS) {
-    if (cols >= rows && cols > 1) cols -= 1;
-    else if (rows > 1) rows -= 1;
-    else break;
-  }
-
-  const points = [];
-  for (let row = 0; row < rows; row += 1) {
-    const lat = rows === 1 ? centerLat : south + ((row + 0.5) * latSpan) / rows;
-    for (let col = 0; col < cols; col += 1) {
-      const lon = cols === 1 ? (west + east) / 2 : west + ((col + 0.5) * lonSpan) / cols;
-      points.push({
-        lat: Number(lat.toFixed(2)),
+  for (let lat = startLat; lat <= endLat + latStep * 0.5; lat += latStep) {
+    for (let lon = startLon; lon <= endLon + lonStep * 0.5; lon += lonStep) {
+      candidates.push({
+        lat: Number(clamp(lat, -85, 85).toFixed(2)),
         lon: Number(wrapLongitude(lon).toFixed(2)),
       });
     }
   }
 
-  return points.length ? points : [fallbackPoint];
+  if (!candidates.length) {
+    return [
+      {
+        lat: Number(snap(centerLat, latStep).toFixed(2)),
+        lon: Number(wrapLongitude(snap((west + east) / 2, lonStep)).toFixed(2)),
+      },
+    ];
+  }
+
+  const centerLon = wrapLongitude((west + east) / 2);
+  candidates.sort((a, b) => {
+    const distanceA = Math.hypot(a.lat - centerLat, (a.lon - centerLon) * cosLat);
+    const distanceB = Math.hypot(b.lat - centerLat, (b.lon - centerLon) * cosLat);
+    return distanceA - distanceB;
+  });
+
+  return candidates.slice(0, maxPoints);
 }
 
 export class AircraftApiClient {
@@ -91,13 +115,17 @@ export class AircraftApiClient {
     return `${point.lat.toFixed(2)}:${point.lon.toFixed(2)}:${RADIUS_NM}`;
   }
 
-  async #fetchTile(point, { forceInitial = false } = {}) {
+  #cachedTile(point) {
+    return this.#tileCache.get(this.#tileKey(point));
+  }
+
+  async #fetchTile(point) {
     const key = this.#tileKey(point);
     const now = Date.now();
     const cached = this.#tileCache.get(key);
 
-    if (!forceInitial && cached && now - cached.at < TILE_CACHE_MS) return cached.aircraft;
-    if (now < this.#backoffUntil) return cached?.aircraft || [];
+    if (cached && now - cached.at < TILE_CACHE_MS) return cached.aircraft;
+    if (now < this.#backoffUntil || document.hidden) return cached?.aircraft || [];
     if (this.#inFlight.has(key)) return this.#inFlight.get(key);
 
     const request = (async () => {
@@ -126,10 +154,14 @@ export class AircraftApiClient {
           const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 180;
           this.#backoffUntil = Date.now() + seconds * 1000;
         }
+        if (cached) return cached.aircraft;
         throw new Error(`HTTP ${response.status}: ${getErrorMessage(payload, 'AIRCRAFT_API_ERROR')}`);
       }
 
-      if (!payload || !Array.isArray(payload.ac)) throw new Error('INVALID_AIRCRAFT_PAYLOAD');
+      if (!payload || !Array.isArray(payload.ac)) {
+        if (cached) return cached.aircraft;
+        throw new Error('INVALID_AIRCRAFT_PAYLOAD');
+      }
 
       const receivedAt = Date.now();
       const aircraft = payload.ac
@@ -145,27 +177,27 @@ export class AircraftApiClient {
     return request;
   }
 
-  async fetchPoint(point, _radiusNm, { forceInitial = false } = {}) {
+  async fetchPoint(point, _radiusNm, { onPartial } = {}) {
     const map = window.__skytraceMap;
     const points = viewportPoints(map, point);
-    const results = [];
+    const deduplicated = new Map();
+
+    const merge = (aircraftList) => {
+      for (const aircraft of aircraftList) {
+        const existing = deduplicated.get(aircraft.id);
+        if (!existing || aircraft.lastSeen >= existing.lastSeen) deduplicated.set(aircraft.id, aircraft);
+      }
+      if (typeof onPartial === 'function') onPartial([...deduplicated.values()]);
+    };
 
     for (let index = 0; index < points.length; index += MAX_CONCURRENCY) {
       const batch = points.slice(index, index + MAX_CONCURRENCY);
-      const batchResults = await Promise.allSettled(
-        batch.map((tilePoint) => this.#fetchTile(tilePoint, { forceInitial }))
-      );
+      const batchResults = await Promise.allSettled(batch.map((tilePoint) => this.#fetchTile(tilePoint)));
 
       for (const result of batchResults) {
-        if (result.status === 'fulfilled') results.push(...result.value);
+        if (result.status === 'fulfilled') merge(result.value);
         else console.error('Viewport aircraft tile failed:', result.reason);
       }
-    }
-
-    const deduplicated = new Map();
-    for (const aircraft of results) {
-      const existing = deduplicated.get(aircraft.id);
-      if (!existing || aircraft.lastSeen >= existing.lastSeen) deduplicated.set(aircraft.id, aircraft);
     }
 
     return [...deduplicated.values()];
