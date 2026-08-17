@@ -31,7 +31,8 @@ function authorized(context) {
   if (!configured) return { ok: false, status: 503, error: 'ADMIN_NOT_CONFIGURED' };
   const auth = context.request.headers.get('authorization') || '';
   const supplied = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (!constantTimeEqual(supplied, configured)) return { ok: false, status: 401, error: 'UNAUTHORIZED' };
+  if (!constantTimeEqual(supplied, configured))
+    return { ok: false, status: 401, error: 'UNAUTHORIZED' };
   return { ok: true };
 }
 
@@ -95,8 +96,10 @@ export async function onRequestPost(context) {
   if (action !== 'pause') return json({ error: 'INVALID_ACTION' }, 400);
 
   let pausedUntil = body.resumeAt ? new Date(body.resumeAt) : null;
-  if (pausedUntil && Number.isNaN(pausedUntil.getTime())) return json({ error: 'INVALID_RESUME_AT' }, 400);
-  if (pausedUntil && pausedUntil.getTime() <= Date.now()) return json({ error: 'INVALID_RESUME_AT' }, 400);
+  if (pausedUntil && Number.isNaN(pausedUntil.getTime()))
+    return json({ error: 'INVALID_RESUME_AT' }, 400);
+  if (pausedUntil && pausedUntil.getTime() <= Date.now())
+    return json({ error: 'INVALID_RESUME_AT' }, 400);
   if (pausedUntil && pausedUntil.getTime() > Date.now() + 7 * 24 * 60 * 60 * 1000)
     return json({ error: 'RESUME_AT_TOO_FAR' }, 400);
 
