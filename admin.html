@@ -6,135 +6,55 @@
     <meta name="robots" content="noindex,nofollow,noarchive" />
     <title>SkyTrace Admin</title>
     <style>
-      :root {
-        color-scheme: dark;
-        font-family: Inter, system-ui, sans-serif;
-      }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        background: #0b0f16;
-        color: #e8eef8;
-      }
-      main {
-        width: min(760px, calc(100% - 32px));
-      }
-      .card {
-        background: #121925;
-        border: 1px solid #243044;
-        border-radius: 16px;
-        padding: 24px;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
-      }
-      h1 {
-        margin-top: 0;
-        font-size: 24px;
-      }
-      p {
-        color: #9fb0c7;
-      }
-      form {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-      input {
-        flex: 1 1 320px;
-        border: 1px solid #31415b;
-        background: #0d131d;
-        color: #fff;
-        border-radius: 10px;
-        padding: 12px 14px;
-      }
-      button {
-        border: 0;
-        border-radius: 10px;
-        padding: 12px 16px;
-        background: #2fe6a8;
-        color: #06110d;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      #error {
-        color: #ff7b92;
-        min-height: 24px;
-      }
-      #dashboard {
-        display: none;
-        margin-top: 22px;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 12px;
-      }
-      .metric {
-        background: #0d131d;
-        border: 1px solid #243044;
-        border-radius: 12px;
-        padding: 16px;
-      }
-      .metric small {
-        color: #8da0ba;
-        display: block;
-        margin-bottom: 8px;
-      }
-      .metric strong {
-        font-size: 28px;
-      }
-      progress {
-        width: 100%;
-        height: 14px;
-        margin-top: 18px;
-      }
-      .muted {
-        font-size: 13px;
-        color: #7f91aa;
-      }
+      :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#081019;color:#e8eef8}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#132235 0,#081019 45%);color:#e8eef8}main{width:min(1180px,calc(100% - 28px));margin:28px auto}.card{background:#101925;border:1px solid #243044;border-radius:18px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.32)}h1,h2{margin-top:0}h2{font-size:17px;margin-bottom:14px}p{color:#9fb0c7}form{display:flex;gap:10px;flex-wrap:wrap}input{flex:1 1 320px;border:1px solid #31415b;background:#0a121d;color:#fff;border-radius:10px;padding:12px 14px}button{border:0;border-radius:10px;padding:11px 15px;background:#2fe6a8;color:#06110d;font-weight:800;cursor:pointer}.secondary{background:#1b2a3c;color:#dce7f5;border:1px solid #31415b}#error{color:#ff7b92;min-height:24px}#dashboard{display:none;margin-top:20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.metric,.provider,.section{background:#0b141f;border:1px solid #243044;border-radius:14px;padding:16px}.metric small,.muted{color:#8498b4}.metric strong{font-size:27px;display:block;margin-top:6px}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:18px 0}.provider-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.provider-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.status{font-size:11px;font-weight:900;padding:5px 8px;border-radius:999px;text-transform:uppercase}.operational{background:#123c31;color:#63f1be}.limited,.degraded{background:#493a14;color:#ffd76a}.unavailable,.not-configured{background:#4a1e2a;color:#ff9bad}.unknown{background:#263244;color:#a9bad1}.provider dl{display:grid;grid-template-columns:1fr auto;gap:7px 12px;margin:14px 0 0}.provider dt{color:#8fa2bb}.provider dd{margin:0;font-weight:700}.charts{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-top:14px}.chart{display:flex;align-items:flex-end;gap:4px;height:190px;padding-top:18px;overflow-x:auto}.bar-wrap{min-width:22px;flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;gap:5px}.bar{width:100%;min-height:2px;background:linear-gradient(180deg,#2fe6a8,#178f70);border-radius:5px 5px 2px 2px}.bar-label{font-size:9px;color:#7890ad}.bar-value{font-size:9px;color:#c8d5e6}.daily .bar{background:linear-gradient(180deg,#6cb7ff,#3769d7)}progress{width:100%;height:14px;margin-top:16px}.details{font-size:12px;line-height:1.7;color:#8093ad}.top-actions{display:flex;gap:8px;flex-wrap:wrap}@media(max-width:800px){.charts{grid-template-columns:1fr}.chart{height:160px}.provider-grid{grid-template-columns:1fr}}
     </style>
   </head>
   <body>
     <main>
       <section class="card">
-        <h1>SkyTrace — Administration API</h1>
-        <p>Cette page est protégée par le jeton administrateur configuré dans Cloudflare.</p>
+        <h1>SkyTrace — Administration</h1>
+        <p>Accès privé aux statistiques, à l’état des services et à la consommation.</p>
         <form id="login-form">
-          <input
-            id="admin-token"
-            type="password"
-            autocomplete="current-password"
-            placeholder="Jeton administrateur"
-            required
-          />
-          <button type="submit">Afficher les statistiques</button>
+          <input id="admin-token" type="password" autocomplete="current-password" placeholder="Jeton administrateur" required />
+          <button type="submit">Ouvrir le dashboard</button>
         </form>
         <div id="error" role="alert"></div>
         <div id="dashboard">
+          <div class="toolbar">
+            <div class="top-actions"><button id="refresh" type="button">Actualiser</button><button id="logout" class="secondary" type="button">Déconnexion</button></div>
+            <span class="muted" id="updated-at">—</span>
+          </div>
           <div class="grid">
-            <div class="metric">
-              <small>Requêtes envoyées aujourd’hui</small><strong id="requests">—</strong>
-            </div>
-            <div class="metric">
-              <small>Requêtes restantes</small><strong id="remaining">—</strong>
-            </div>
+            <div class="metric"><small>Requêtes externes aujourd’hui</small><strong id="requests">—</strong></div>
             <div class="metric"><small>Succès</small><strong id="successes">—</strong></div>
             <div class="metric"><small>Échecs</small><strong id="failures">—</strong></div>
-            <div class="metric">
-              <small>Réponses servies depuis le cache</small><strong id="cache-hits">—</strong>
-            </div>
-            <div class="metric">
-              <small>Blocages quota</small><strong id="quota-blocked">—</strong>
-            </div>
+            <div class="metric"><small>Réponses depuis le cache</small><strong id="cache-hits">—</strong></div>
+            <div class="metric"><small>Requêtes restantes sur quota</small><strong id="remaining">—</strong></div>
+            <div class="metric"><small>Blocages quota</small><strong id="quota-blocked">—</strong></div>
           </div>
           <progress id="quota-progress" max="500" value="0"></progress>
           <p id="quota-text"></p>
-          <p class="muted" id="details"></p>
-          <button id="refresh" type="button">Actualiser</button>
+
+          <section class="section">
+            <h2>État et consommation par service</h2>
+            <div id="providers" class="provider-grid"></div>
+          </section>
+
+          <div class="charts">
+            <section class="section">
+              <h2>Requêtes par heure — aujourd’hui (UTC)</h2>
+              <div id="hourly-chart" class="chart"></div>
+            </section>
+            <section class="section daily">
+              <h2>Requêtes par jour — 7 jours</h2>
+              <div id="daily-chart" class="chart"></div>
+            </section>
+          </div>
+
+          <p class="details" id="details"></p>
         </div>
       </section>
     </main>
-    <script type="module" src="/admin.js"></script>
+    <script type="module" src="/admin.js?v=20260817-10"></script>
   </body>
 </html>
