@@ -5,62 +5,13 @@ import { applyLanguage, getLanguage, t } from './js/i18n.js';
 import { createMapView } from './js/map-view.js';
 
 const RADIUS_NM = 250;
-const TICK_MS = 1200;
-const STALE_MS = 200000;
+const TICK_MS = 180000;
+const STALE_MS = 600000;
 const TRAILS_STORAGE_KEY = 'skytrace_trails_v2';
-
-const HUB_POINTS = [
-  ['Israël / Levant', 31.5, 34.8, 'Moyen-Orient'],
-  ['Europe de l’Ouest', 48.8, 2.3, 'Europe'],
-  ['Europe Centrale', 50.1, 8.7, 'Europe'],
-  ['Royaume-Uni', 51.5, -0.1, 'Europe'],
-  ['Scandinavie', 59.3, 18.1, 'Europe'],
-  ['Europe de l’Est', 52.2, 21, 'Europe'],
-  ['Russie (Ouest)', 55.7, 37.6, 'Europe'],
-  ['Turquie', 41, 28.9, 'Moyen-Orient'],
-  ['Iran', 35.7, 51.4, 'Moyen-Orient'],
-  ['Golfe Persique', 25.2, 55.3, 'Moyen-Orient'],
-  ['Afrique du Nord', 30, 31.2, 'Afrique'],
-  ['Afrique de l’Ouest', 6.5, 3.4, 'Afrique'],
-  ['Afrique Centrale', -4.3, 15.3, 'Afrique'],
-  ['Afrique de l’Est', -1.3, 36.8, 'Afrique'],
-  ['Afrique du Sud', -26.2, 28, 'Afrique'],
-  ['Asie Centrale', 43.2, 76.9, 'Asie'],
-  ['Sibérie', 55, 83, 'Asie'],
-  ['Pakistan', 24.9, 67, 'Asie'],
-  ['Inde (Nord)', 28.6, 77.2, 'Asie'],
-  ['Inde (Sud)', 19.1, 72.9, 'Asie'],
-  ['Chine (Est)', 31.2, 121.5, 'Asie'],
-  ['Chine (Nord)', 39.9, 116.4, 'Asie'],
-  ['Mongolie', 47.9, 106.9, 'Asie'],
-  ['Japon', 35.7, 139.7, 'Asie'],
-  ['Corée du Sud', 37.6, 127, 'Asie'],
-  ['Asie du Sud-Est', 1.35, 103.8, 'Asie'],
-  ['Philippines', 14.6, 121, 'Asie'],
-  ['Australie (Est)', -33.9, 151.2, 'Océanie'],
-  ['Nouvelle-Zélande', -41.3, 174.8, 'Océanie'],
-  ['Pacifique (Hawaï)', 21.3, -157.8, 'Océanie'],
-  ['Pacifique (Guam)', 13.5, 144.8, 'Océanie'],
-  ['USA (Est)', 40.7, -74, 'Amérique du Nord'],
-  ['USA (Sud-Est)', 33.7, -84.4, 'Amérique du Nord'],
-  ['USA (Centre)', 41.9, -87.6, 'Amérique du Nord'],
-  ['USA (Sud)', 32.8, -96.8, 'Amérique du Nord'],
-  ['USA (Ouest)', 34, -118.2, 'Amérique du Nord'],
-  ['Canada (Est)', 43.7, -79.4, 'Amérique du Nord'],
-  ['Canada (Ouest)', 49.2, -123.1, 'Amérique du Nord'],
-  ['Alaska', 61.2, -149.9, 'Amérique du Nord'],
-  ['Mexique', 19.4, -99.1, 'Amérique du Nord'],
-  ['Atlantique Nord', 50, -30, 'Atlantique'],
-  ['Colombie', 4.6, -74.1, 'Amérique du Sud'],
-  ['Pérou', -12, -77, 'Amérique du Sud'],
-  ['Brésil', -23.5, -46.6, 'Amérique du Sud'],
-  ['Argentine', -34.6, -58.4, 'Amérique du Sud'],
-  ['Chili', -33.4, -70.6, 'Amérique du Sud'],
-].map(([name, lat, lon, region]) => ({ name, lat, lon, region }));
 
 const CONTINENT_VIEWS = {
   Europe: [[50, 12], 5],
-  'Moyen-Orient': [[30, 40], 5],
+  'Moyen-Orient': [[31.5, 34.8], 6],
   Afrique: [[2, 20], 4],
   Asie: [[32, 90], 4],
   Océanie: [[-22, 150], 4],
@@ -81,6 +32,12 @@ const elements = {
 
 const api = new AircraftApiClient();
 const { map, planeLayer } = createMapView();
+map.setView([31.5, 34.8], 6, { animate: false });
+
+// API health and usage are intentionally not exposed in the public interface.
+if (elements.status) elements.status.style.display = 'none';
+if (elements.cycles?.parentElement) elements.cycles.parentElement.style.display = 'none';
+
 const routeLine = L.polyline([], {
   color: '#38bdf8',
   weight: 3.5,
@@ -93,16 +50,13 @@ const aircraftById = new Map();
 const filters = { altMin: null, altMax: null, hideGround: false };
 let selectedId = null;
 let renderedAircraft = [];
-let gridIndex = 0;
-let priorityPoints = null;
-let priorityIndex = 0;
-let cycleCount = 0;
 let followEnabled = false;
 let routeVisible = false;
 let animationFrame = null;
 let lastFrameAt = 0;
 let customCircle = null;
 let trails = loadTrails();
+let lastViewKey = '';
 
 function loadTrails() {
   try {
@@ -117,49 +71,49 @@ function saveTrails() {
   localStorage.setItem(TRAILS_STORAGE_KEY, JSON.stringify(limited));
 }
 
-function nextPoint() {
-  if (priorityPoints?.length && gridIndex % 2 === 0) {
-    return priorityPoints[priorityIndex++ % priorityPoints.length];
-  }
-  const point = HUB_POINTS[gridIndex++ % HUB_POINTS.length];
-  if (gridIndex % HUB_POINTS.length === 0) cycleCount += 1;
-  return point;
+function currentPoint() {
+  const center = map.getCenter();
+  return {
+    name: 'Zone affichée',
+    lat: Number(center.lat.toFixed(3)),
+    lon: Number(center.lng.toFixed(3)),
+  };
 }
 
-function setStatus(kind, text) {
-  elements.status.className = kind;
-  elements.status.textContent = text;
+function updateZoneLabel() {
+  const point = currentPoint();
+  elements.zone.textContent = `${point.lat.toFixed(2)}, ${point.lon.toFixed(2)}`;
 }
 
-function updateLastDataAge() {
-  if (!api.lastSuccessfulUpdate || !elements.status.classList.contains('live')) return;
-  const seconds = Math.max(0, Math.floor((Date.now() - api.lastSuccessfulUpdate) / 1000));
-  const label = t('last_update', seconds);
-  elements.status.textContent = t('status_age', seconds);
-  elements.status.title = label;
-  elements.status.setAttribute('aria-label', label);
+function clearCurrentAircraft() {
+  aircraftById.clear();
+  renderedAircraft = [];
+  planeLayer.setData([]);
+  elements.count.textContent = '0';
+  if (selectedId) closePanel();
 }
 
-async function fetchTick() {
-  const point = nextPoint();
-  elements.zone.textContent = point.name.toUpperCase();
-  setStatus('loading', t('status_updating'));
+async function fetchTick({ forceInitial = false } = {}) {
+  const point = currentPoint();
+  updateZoneLabel();
+
   try {
-    const received = await api.fetchPoint(point, RADIUS_NM);
+    const received = await api.fetchPoint(point, RADIUS_NM, { forceInitial });
+    if (received == null) return;
+
     const now = Date.now();
+    aircraftById.clear();
     for (const aircraft of received) aircraftById.set(aircraft.id, aircraft);
     for (const [id, aircraft] of aircraftById) {
       if (now - aircraft.lastSeen > STALE_MS) aircraftById.delete(id);
     }
+
     updateSelectedTrail();
-    elements.cycles.textContent = cycleCount.toLocaleString(getLanguage());
-    setStatus('live', t('status_live'));
-    updateLastDataAge();
     if (selectedId && aircraftById.has(selectedId)) updatePanel(aircraftById.get(selectedId));
     checkSharedPlane();
   } catch (error) {
-    setStatus('err', t('status_error'));
-    console.error('Aircraft update failed:', error);
+    // Keep provider availability private; diagnostics remain in the browser console.
+    console.error('Aircraft data refresh failed:', error);
   }
 }
 
@@ -248,10 +202,7 @@ function updateRouteInfo(count) {
   document.getElementById('route-info').textContent = count ? t('route_points', count) : '';
 }
 
-function setCustomPoint(lat, lon, name = 'Zone sélectionnée') {
-  priorityPoints = [{ name, lat, lon }];
-  priorityIndex = 0;
-  gridIndex = 0;
+function setCustomPoint(lat, lon) {
   if (customCircle) map.removeLayer(customCircle);
   customCircle = L.circle([lat, lon], {
     radius: RADIUS_NM * 1852,
@@ -260,6 +211,7 @@ function setCustomPoint(lat, lon, name = 'Zone sélectionnée') {
     fillOpacity: 0.03,
     dashArray: '4,6',
   }).addTo(map);
+  map.panTo([lat, lon]);
 }
 
 map.on('click', (event) => {
@@ -275,10 +227,18 @@ map.on('click', (event) => {
     }
   }
   if (closest && distance < 18) selectAircraft(closest);
-  else {
-    setCustomPoint(event.latlng.lat, event.latlng.lng);
-    fetchTick();
+  else setCustomPoint(event.latlng.lat, event.latlng.lng);
+});
+
+map.on('moveend', () => {
+  updateZoneLabel();
+  const point = currentPoint();
+  const viewKey = `${point.lat.toFixed(1)}:${point.lon.toFixed(1)}`;
+  if (viewKey !== lastViewKey) {
+    lastViewKey = viewKey;
+    clearCurrentAircraft();
   }
+  fetchTick();
 });
 
 document.getElementById('panel-close').addEventListener('click', closePanel);
@@ -320,21 +280,16 @@ document.getElementById('filters-toggle').addEventListener('click', () => {
 });
 document.querySelectorAll('.zone-btn').forEach((button) =>
   button.addEventListener('click', () => {
-    const region = button.dataset.region;
-    priorityPoints = HUB_POINTS.filter((point) => point.region === region);
-    priorityIndex = 0;
-    gridIndex = 0;
-    const view = CONTINENT_VIEWS[region];
+    const view = CONTINENT_VIEWS[button.dataset.region];
     if (view) map.flyTo(view[0], view[1], { duration: 1 });
-    fetchTick();
   })
 );
-document.getElementById('zone-clear').addEventListener('click', () => {
-  priorityPoints = null;
-  priorityIndex = 0;
+
+document.getElementById('zone-clear').addEventListener('click', (event) => {
   if (customCircle) map.removeLayer(customCircle);
   customCircle = null;
-  map.flyTo([30, 15], 3);
+  event.currentTarget.textContent = 'REVENIR À ISRAËL';
+  map.flyTo([31.5, 34.8], 6, { duration: 1 });
 });
 
 function refreshFilters() {
@@ -362,9 +317,15 @@ elements.search.addEventListener('keydown', (event) => {
   if (!query) return;
   const airport = AIRPORTS[query];
   if (airport) {
-    setCustomPoint(airport.lat, airport.lon, airport.name);
+    if (customCircle) map.removeLayer(customCircle);
+    customCircle = L.circle([airport.lat, airport.lon], {
+      radius: RADIUS_NM * 1852,
+      color: '#2fe6a8',
+      weight: 1,
+      fillOpacity: 0.03,
+      dashArray: '4,6',
+    }).addTo(map);
     map.flyTo([airport.lat, airport.lon], 9);
-    fetchTick();
     return;
   }
   const aircraft = [...aircraftById.values()].find(
@@ -374,12 +335,6 @@ elements.search.addEventListener('keydown', (event) => {
   if (aircraft) {
     selectAircraft(aircraft);
     map.flyTo([aircraft.lat, aircraft.lon], Math.max(map.getZoom(), 6));
-  } else {
-    setStatus('err', t('status_not_tracked'));
-    setTimeout(() => {
-      setStatus('live', t('status_live'));
-      updateLastDataAge();
-    }, 2000);
   }
 });
 
@@ -388,7 +343,8 @@ document.querySelectorAll('.lang-btn').forEach((button) => {
 });
 document.addEventListener('skytrace:languagechange', () => {
   updateRouteInfo(selectedId ? (trails[selectedId] || []).length : 0);
-  updateLastDataAge();
+  const resetButton = document.getElementById('zone-clear');
+  if (resetButton) resetButton.textContent = 'REVENIR À ISRAËL';
 });
 
 const sharedPlane = new URLSearchParams(location.search).get('plane')?.toUpperCase();
@@ -405,9 +361,12 @@ function checkSharedPlane() {
 }
 
 applyLanguage(getLanguage());
-fetchTick();
+const resetButton = document.getElementById('zone-clear');
+if (resetButton) resetButton.textContent = 'REVENIR À ISRAËL';
+updateZoneLabel();
+lastViewKey = `${currentPoint().lat.toFixed(1)}:${currentPoint().lon.toFixed(1)}`;
+fetchTick({ forceInitial: true });
 setInterval(fetchTick, TICK_MS);
-setInterval(updateLastDataAge, 1000);
 animationFrame = requestAnimationFrame(render);
 
 if (window.L?.DomEvent) {
