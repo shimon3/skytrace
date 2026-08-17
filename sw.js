@@ -1,4 +1,4 @@
-const SW_VERSION = '20260817-2';
+const SW_VERSION = '20260817-3';
 const CACHE_NAME = `skytrace-static-${SW_VERSION}`;
 
 const PRECACHE_URLS = [
@@ -50,8 +50,6 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')) return;
   if (!CACHEABLE_DESTINATIONS.has(request.destination)) return;
 
-  // JavaScript is network-first so a deployed aircraft/API fix cannot be
-  // hidden behind an old service-worker cache. Static assets remain cached.
   if (request.destination === 'script') {
     event.respondWith(
       fetch(request)
