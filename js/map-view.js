@@ -43,10 +43,6 @@ const PlaneLayer = L.Layer.extend({
     this._canvas.style.zIndex = 450;
     this._canvas.style.pointerEvents = 'none';
     map.getPanes().overlayPane.appendChild(this._canvas);
-
-    // Do not rebuild the canvas on every frame of Leaflet's animated zoom.
-    // During the animation Leaflet temporarily transforms map panes; resetting
-    // the canvas at that moment can project aircraft outside the viewport.
     map.on('moveend zoomend resize viewreset', this._reset, this);
     this._reset();
   },
@@ -112,6 +108,11 @@ export function createMapView() {
     minZoom: 2,
     maxZoom: 11,
   }).setView([30, 15], 3);
+
+  // The API client uses the live Leaflet bounds to request only aircraft
+  // covering the region that is currently visible on screen.
+  window.__skytraceMap = map;
+
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
     subdomains: 'abcd',
