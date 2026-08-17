@@ -35,12 +35,14 @@ export async function onRequestGet(context) {
   const day = utcDay();
   const stats = await readStats(context.env, day, url.origin);
   const dailyLimit = getDailyLimit();
+  const primaryRequests = stats.airplanesLiveRequests || 0;
 
   return jsonResponse({
     ...stats,
     dailyLimit,
-    remaining: Math.max(0, dailyLimit - stats.requests),
-    percentUsed: dailyLimit > 0 ? Math.round((stats.requests / dailyLimit) * 1000) / 10 : 0,
+    remaining: Math.max(0, dailyLimit - primaryRequests),
+    percentUsed:
+      dailyLimit > 0 ? Math.round((primaryRequests / dailyLimit) * 1000) / 10 : 0,
     storage: context.env?.SKYTRACE_STATS ? 'KV' : 'cache-fallback',
   });
 }
