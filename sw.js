@@ -1,4 +1,4 @@
-const SW_VERSION = '20260804-1';
+const SW_VERSION = '20260817-2';
 const CACHE_NAME = `skytrace-static-${SW_VERSION}`;
 
 const PRECACHE_URLS = [
@@ -19,10 +19,6 @@ const PRECACHE_URLS = [
   '/icons/icon-512-maskable.png',
 ];
 
-// Requests whose destination is one of these are eligible for cache-first handling.
-// Navigation (HTML) and the /api/* flight-status proxy are intentionally excluded:
-// the HTML is the version anchor for cache-busted asset URLs, and flight data must
-// always be fresh.
 const CACHEABLE_DESTINATIONS = new Set(['script', 'style', 'image', 'font', 'manifest']);
 
 self.addEventListener('install', (event) => {
@@ -53,6 +49,23 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
   if (!CACHEABLE_DESTINATIONS.has(request.destination)) return;
+
+  // JavaScript is network-first so a deployed aircraft/API fix cannot be
+  // hidden behind an old service-worker cache. Static assets remain cached.
+  if (request.destination === 'script') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(request).then((cached) => {
