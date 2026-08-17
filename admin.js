@@ -38,12 +38,14 @@ async function loadStats() {
 
     const progress = document.getElementById('quota-progress');
     progress.max = payload.dailyLimit || 500;
-    progress.value = payload.requests || 0;
+    progress.value = payload.airplanesLiveRequests || 0;
 
     document.getElementById('quota-text').textContent =
-      `${payload.requests} / ${payload.dailyLimit} requêtes utilisées (${payload.percentUsed} %).`;
+      `${payload.airplanesLiveRequests || 0} / ${payload.dailyLimit} requêtes Airplanes.live utilisées (${payload.percentUsed} %).`;
     document.getElementById('details').textContent =
-      `Jour UTC : ${payload.day} · Dernière requête : ${payload.lastRequestAt || 'aucune'} · ` +
+      `Jour UTC : ${payload.day} · Airplanes.live : ${payload.airplanesLiveRequests || 0} · ` +
+      `adsb.lol : ${payload.adsbLolRequests || 0} · Bascules fallback : ${payload.fallbackActivations || 0} · ` +
+      `Dernier fournisseur : ${payload.lastProvider || '—'} · Dernière requête : ${payload.lastRequestAt || 'aucune'} · ` +
       `Dernier statut : ${payload.lastStatus ?? '—'} · Stockage : ${payload.storage}`;
 
     dashboard.style.display = 'block';
