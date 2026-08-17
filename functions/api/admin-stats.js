@@ -1,3 +1,4 @@
+import { readAllProviderControls } from '../lib/provider-controls.js';
 import { getDailyLimit, readStats, utcDay } from '../lib/stats.js';
 
 function jsonResponse(payload, status = 200) {
@@ -29,8 +30,9 @@ function previousUtcDays(count) {
   return result;
 }
 
-function providerHealth(provider, configured = true) {
+function providerHealth(provider, configured = true, enabled = true) {
   if (!configured) return 'not-configured';
+  if (!enabled) return 'paused';
   if (!provider?.lastStatus) return 'unknown';
   if (provider.lastStatus >= 200 && provider.lastStatus < 300) return 'operational';
   if (provider.lastStatus === 429 || provider.lastStatus === 403) return 'limited';
@@ -50,6 +52,8 @@ export async function onRequestGet(context) {
   const url = new URL(context.request.url);
   const day = utcDay();
   const stats = await readStats(context.env, day, url.origin);
+  const controls = await readAllProviderControls(context.env, url.origin);
+  const controlMap = Object.fromEntries(controls.map((item) => [item.provider, item]));
   const dailyLimit = getDailyLimit();
   const primaryRequests = stats.airplanesLiveRequests || 0;
 
@@ -76,6 +80,7 @@ export async function onRequestGet(context) {
 
   const providers = providerDefinitions.map((definition) => {
     const provider = stats.providers?.[definition.id] || {};
+    const control = controlMap[definition.id] || { enabled: true, pausedUntil: null };
     return {
       ...definition,
       requests: provider.requests || 0,
@@ -83,7 +88,9 @@ export async function onRequestGet(context) {
       failures: provider.failures || 0,
       lastStatus: provider.lastStatus ?? null,
       lastRequestAt: provider.lastRequestAt || null,
-      health: providerHealth(provider, definition.configured),
+      enabled: control.enabled,
+      pausedUntil: control.pausedUntil,
+      health: providerHealth(provider, definition.configured, control.enabled),
     };
   });
 
