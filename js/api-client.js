@@ -2,7 +2,7 @@ import { normalizeAircraft } from './flight-utils.js';
 
 const AIRCRAFT_API = '/api/aircraft';
 const PHOTO_API = 'https://api.planespotters.net/pub/photos/reg';
-const MIN_REQUEST_INTERVAL_MS = 15000;
+const MIN_REQUEST_INTERVAL_MS = 180000;
 
 function getErrorMessage(payload, fallback) {
   if (!payload || typeof payload !== 'object') return fallback;
@@ -24,18 +24,20 @@ export class AircraftApiClient {
     return this.#backoffUntil;
   }
 
-  async fetchPoint(point, radiusNm) {
+  get nextRequestAt() {
+    return Math.max(this.#lastRequestAt + MIN_REQUEST_INTERVAL_MS, this.#backoffUntil);
+  }
+
+  canRequestNow() {
+    return !this.#requestInFlight && Date.now() >= this.nextRequestAt;
+  }
+
+  async fetchPoint(point, radiusNm, { forceInitial = false } = {}) {
     const now = Date.now();
 
-    // app.js may ask for a refresh very frequently. Do not queue those calls:
-    // silently skip until the next real request is allowed.
-    if (this.#requestInFlight || now - this.#lastRequestAt < MIN_REQUEST_INTERVAL_MS) {
-      return [];
-    }
-
-    if (now < this.#backoffUntil) {
-      return [];
-    }
+    if (this.#requestInFlight) return null;
+    if (!forceInitial && now < this.nextRequestAt) return null;
+    if (now < this.#backoffUntil) return null;
 
     this.#requestInFlight = true;
     this.#lastRequestAt = now;
@@ -62,7 +64,7 @@ export class AircraftApiClient {
       if (!response.ok) {
         const retryAfter = Number(response.headers.get('retry-after'));
         if (response.status === 429) {
-          const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 120;
+          const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 180;
           this.#backoffUntil = Date.now() + seconds * 1000;
         }
         const message = getErrorMessage(payload, `HTTP ${response.status}`);
@@ -83,7 +85,7 @@ export class AircraftApiClient {
     } catch (error) {
       this.#consecutiveFailures += 1;
       if (this.#consecutiveFailures >= 3 && Date.now() >= this.#backoffUntil) {
-        const seconds = Math.min(15 * 2 ** (this.#consecutiveFailures - 3), 120);
+        const seconds = Math.min(60 * 2 ** (this.#consecutiveFailures - 3), 300);
         this.#backoffUntil = Date.now() + seconds * 1000;
       }
       throw error;
