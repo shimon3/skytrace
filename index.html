@@ -4,10 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>SkyTrace — Suivi des vols en direct</title>
-    <link rel="manifest" href="manifest.json?v=20260804-1" />
+    <link rel="manifest" href="manifest.json?v=20260817-2" />
     <meta name="theme-color" content="#0d1119" />
-    <link rel="icon" href="icons/icon-192.png?v=20260804-1" type="image/png" />
-    <link rel="apple-touch-icon" href="icons/icon-512.png?v=20260804-1" />
+    <link rel="icon" href="icons/icon-192.png?v=20260817-2" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/icon-512.png?v=20260817-2" />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -19,10 +19,10 @@
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin="anonymous"
     ></script>
-    <link rel="stylesheet" href="style.css?v=20260804-1" />
-    <link rel="stylesheet" href="mobile.css?v=20260804-1" />
-    <link rel="stylesheet" href="flight-status.css?v=20260804-1" />
-    <link rel="stylesheet" href="panel-wide-layout.css?v=20260804-1" />
+    <link rel="stylesheet" href="style.css?v=20260817-2" />
+    <link rel="stylesheet" href="mobile.css?v=20260817-2" />
+    <link rel="stylesheet" href="flight-status.css?v=20260817-2" />
+    <link rel="stylesheet" href="panel-wide-layout.css?v=20260817-2" />
   </head>
   <body>
     <div id="map"></div>
@@ -35,19 +35,19 @@
         placeholder="indicatif, immatriculation ou code aéroport…"
         aria-label="Recherche de vol ou d’aéroport"
       />
-      <div id="status" class="loading" data-i18n="status_connecting" aria-live="polite">
+      <div id="status" class="loading" data-i18n="status_connecting" aria-live="polite" hidden>
         CONNEXION…
       </div>
       <div id="zone"><span data-i18n="zone_label">ZONE</span>: <span id="zone-name">—</span></div>
       <div id="stats">
         <div><span data-i18n="stat_tracked">VOLS SUIVIS</span> <b id="stat-count">0</b></div>
-        <div><span data-i18n="stat_cycles">ZONES EXPLORÉES</span> <b id="stat-cycles">0</b></div>
+        <div hidden><span data-i18n="stat_cycles">ZONES EXPLORÉES</span> <b id="stat-cycles">0</b></div>
       </div>
       <button id="zones-toggle" class="toolbtn" data-i18n="btn_zones">ZONES</button>
       <button id="filters-toggle" class="toolbtn" data-i18n="btn_filters">FILTRES</button>
     </div>
     <div id="zones-panel">
-      <div class="zones-title" data-i18n="zones_title">Explorer un continent</div>
+      <div class="zones-title" data-i18n="zones_title">Afficher une région</div>
       <button class="zone-btn" data-region="Europe">
         🇪🇺 <span data-i18n="cont_europe">Europe</span>
       </button>
@@ -75,7 +75,7 @@
         style="width: 100%; margin-top: 8px"
         data-i18n="btn_resume"
       >
-        REPRENDRE LA ROTATION MONDIALE
+        RETOUR ISRAËL
       </button>
     </div>
     <div id="filters-panel">
@@ -107,78 +107,46 @@
       </div>
       <div id="panel-body">
         <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">🆔</span><span data-i18n="lbl_reg">Immatriculation</span></span
-          ><span id="p-registration">—</span>
+          <span class="rlabel"><span class="ricon">🆔</span><span data-i18n="lbl_reg">Immatriculation</span></span><span id="p-registration">—</span>
         </div>
         <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">▲</span><span data-i18n="lbl_alt">Altitude</span></span
-          ><span id="p-alt">—</span>
+          <span class="rlabel"><span class="ricon">▲</span><span data-i18n="lbl_alt">Altitude</span></span><span id="p-alt">—</span>
         </div>
         <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">➤</span><span data-i18n="lbl_speed">Vitesse</span></span
-          ><span id="p-speed">—</span>
+          <span class="rlabel"><span class="ricon">➤</span><span data-i18n="lbl_speed">Vitesse</span></span><span id="p-speed">—</span>
         </div>
         <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">⟳</span><span data-i18n="lbl_heading">Cap</span></span
-          ><span id="p-heading">—</span>
+          <span class="rlabel"><span class="ricon">🧭</span><span data-i18n="lbl_heading">Cap</span></span><span id="p-heading">—</span>
         </div>
         <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">↕</span><span data-i18n="lbl_vrate">Vitesse vert.</span></span
-          ><span id="p-vrate">—</span>
+          <span class="rlabel"><span class="ricon">↕</span><span data-i18n="lbl_vrate">Vitesse verticale</span></span><span id="p-vrate">—</span>
         </div>
         <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">◈</span><span data-i18n="lbl_squawk">Transpondeur</span></span
-          ><span id="p-squawk">—</span>
+          <span class="rlabel"><span class="ricon">📡</span><span data-i18n="lbl_squawk">Squawk</span></span><span id="p-squawk">—</span>
         </div>
         <div class="row">
-          <span class="rlabel"
-            ><span class="ricon">◎</span><span data-i18n="lbl_pos">Position</span></span
-          ><span id="p-pos">—</span>
+          <span class="rlabel"><span class="ricon">📍</span><span data-i18n="lbl_position">Position</span></span><span id="p-pos">—</span>
         </div>
       </div>
-      <div class="panel-actions">
-        <button id="btn-follow" class="toolbtn small" type="button" data-i18n="btn_follow">
-          SUIVRE
-        </button>
-        <button id="btn-route" class="toolbtn small" type="button" data-i18n="btn_route">
-          TRAJECTOIRE
-        </button>
-        <button id="btn-share" class="toolbtn small" type="button" data-i18n="btn_share">
-          PARTAGER
-        </button>
+      <div id="panel-actions">
+        <button id="btn-follow" class="toolbtn small" type="button" data-i18n="btn_follow">SUIVRE</button>
+        <button id="btn-route" class="toolbtn small" type="button" data-i18n="btn_route">TRAJECTOIRE</button>
+        <button id="btn-share" class="toolbtn small" type="button" data-i18n="btn_share">PARTAGER</button>
       </div>
       <div id="route-info"></div>
     </div>
     <div id="legend">
-      <div class="legend-item">
-        <span class="legend-swatch" style="background: #2fe6a8"></span
-        ><span data-i18n="legend_cruise">Croisière (&gt;8000m)</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-swatch" style="background: #f5b942"></span
-        ><span data-i18n="legend_mid">Moyenne altitude</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-swatch" style="background: #ff4d6d"></span
-        ><span data-i18n="legend_low">Décollage/atterrissage</span>
-      </div>
+      <div class="legend-item"><span class="legend-swatch" style="background: #2fe6a8"></span><span data-i18n="legend_cruise">Croisière (&gt;8000m)</span></div>
+      <div class="legend-item"><span class="legend-swatch" style="background: #f5b942"></span><span data-i18n="legend_mid">Moyenne altitude</span></div>
+      <div class="legend-item"><span class="legend-swatch" style="background: #ff4d6d"></span><span data-i18n="legend_low">Décollage/atterrissage</span></div>
     </div>
     <div id="attribution-note" data-i18n="attribution">
-      Données: airplanes.live · Photos: planespotters.net · Les positions entre deux mises à jour
-      sont estimées
+      Données: airplanes.live · Photos: planespotters.net · Les positions entre deux mises à jour sont estimées
     </div>
     <div id="lang-switcher">
-      <button class="lang-btn" data-lang="fr">Français</button
-      ><button class="lang-btn" data-lang="en">English</button
-      ><button class="lang-btn" data-lang="he">עברית</button>
+      <button class="lang-btn" data-lang="fr">Français</button><button class="lang-btn" data-lang="en">English</button><button class="lang-btn" data-lang="he">עברית</button>
     </div>
-    <script type="module" src="app.js?v=20260804-1"></script>
-    <script type="module" src="js/flight-status-integration.js?v=20260804-1"></script>
+    <script type="module" src="app.js?v=20260817-2"></script>
+    <script type="module" src="js/flight-status-integration.js?v=20260817-2"></script>
   </body>
 </html>
