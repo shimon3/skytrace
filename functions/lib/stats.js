@@ -39,14 +39,18 @@ export async function readStats(env, day = utcDay(), origin) {
 
   if (env?.SKYTRACE_STATS?.get) {
     const stored = await env.SKYTRACE_STATS.get(key, { type: 'json' });
-    return stored && typeof stored === 'object' ? { ...emptyStats(day), ...stored } : emptyStats(day);
+    return stored && typeof stored === 'object'
+      ? { ...emptyStats(day), ...stored }
+      : emptyStats(day);
   }
 
   const cached = await caches.default.match(fallbackRequest(day, origin));
   if (!cached) return emptyStats(day);
   try {
     const stored = await cached.json();
-    return stored && typeof stored === 'object' ? { ...emptyStats(day), ...stored } : emptyStats(day);
+    return stored && typeof stored === 'object'
+      ? { ...emptyStats(day), ...stored }
+      : emptyStats(day);
   } catch {
     return emptyStats(day);
   }

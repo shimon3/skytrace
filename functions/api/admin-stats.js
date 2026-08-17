@@ -41,8 +41,7 @@ export async function onRequestGet(context) {
     ...stats,
     dailyLimit,
     remaining: Math.max(0, dailyLimit - primaryRequests),
-    percentUsed:
-      dailyLimit > 0 ? Math.round((primaryRequests / dailyLimit) * 1000) / 10 : 0,
+    percentUsed: dailyLimit > 0 ? Math.round((primaryRequests / dailyLimit) * 1000) / 10 : 0,
     storage: context.env?.SKYTRACE_STATS ? 'KV' : 'cache-fallback',
   });
 }

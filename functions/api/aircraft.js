@@ -245,7 +245,9 @@ export async function onRequestGet(context) {
     },
   });
 
-  context.waitUntil(Promise.all([cache.put(cacheKey, freshResponse), cache.put(staleKey, staleResponse)]));
+  context.waitUntil(
+    Promise.all([cache.put(cacheKey, freshResponse), cache.put(staleKey, staleResponse)])
+  );
 
   return new Response(body, {
     status: 200,

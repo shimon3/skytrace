@@ -18,13 +18,16 @@ const aircraftWorker = await readFile(
 const apiClient = await readFile(new URL('../js/api-client.js', import.meta.url), 'utf8');
 
 const forbiddenSecretPatterns = [
-  /AIRLABS_API_KEY\s*=\s*['"][^'"]+['"]/, 
+  /AIRLABS_API_KEY\s*=\s*['"][^'"]+['"]/,
   /api_key=[A-Za-z0-9_-]{12,}/,
 ];
 const optionalVersion = '(?:\\?v=[A-Za-z0-9._-]+)?';
 
 test('keeps the aircraft application and loads AirLabs as an additive module', () => {
-  assert.match(index, new RegExp(`<script type="module" src="app\\.js${optionalVersion}"><\\/script>`));
+  assert.match(
+    index,
+    new RegExp(`<script type="module" src="app\\.js${optionalVersion}"><\\/script>`)
+  );
   assert.match(
     index,
     new RegExp(
