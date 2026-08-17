@@ -22,20 +22,17 @@ test('application uses registration terminology and modular imports', async () =
   assert.match(app, /from '\.\/js\/api-client\.js'/);
   assert.match(app, /from '\.\/js\/flight-utils\.js'/);
   assert.match(app, /requestAnimationFrame\(render\)/);
-  assert.match(app, /status_age/);
+  assert.match(app, /scheduleViewportRefresh/);
   assert.doesNotMatch(app, /\.country\b/);
 });
 
-test('global scan retains representative remote regions', async () => {
+test('viewport-driven coverage replaces the old worldwide rotation scan', async () => {
   const app = await read('app.js');
-  for (const region of [
-    'Russie (Ouest)',
-    'Sibérie',
-    'Pacifique (Hawaï)',
-    'Alaska',
-    'Atlantique Nord',
-    'Chili',
-  ]) {
-    assert.match(app, new RegExp(region.replace(/[()]/g, '\\$&')));
-  }
+  const apiClient = await read('js/api-client.js');
+
+  assert.match(app, /map\.on\('moveend'/);
+  assert.match(apiClient, /viewportPoints/);
+  assert.match(apiClient, /map\.getBounds/);
+  assert.match(apiClient, /lowZoomLimit/);
+  assert.doesNotMatch(app, /Russie \(Ouest\)|Sibérie|Pacifique \(Hawaï\)|Atlantique Nord/);
 });
