@@ -69,11 +69,7 @@ async function fetchProvider(provider, upstreamUrl, context, origin) {
       };
     }
 
-    return {
-      ok: true,
-      status: response.status,
-      payload,
-    };
+    return { ok: true, status: response.status, payload };
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'AbortError';
     context.waitUntil(recordUpstreamRequest(context.env, timedOut ? 598 : 599, origin, provider));
@@ -88,6 +84,7 @@ export async function onRequestGet(context) {
   const lat = parseNumber(url.searchParams.get('lat'));
   const lon = parseNumber(url.searchParams.get('lon'));
   const radius = parseNumber(url.searchParams.get('radius'));
+  const preferAdsbLol = url.searchParams.get('prefer') === 'adsb.lol';
 
   if (
     lat == null ||
@@ -111,6 +108,7 @@ export async function onRequestGet(context) {
   cacheKeyUrl.searchParams.set('lat', normalizedLat);
   cacheKeyUrl.searchParams.set('lon', normalizedLon);
   cacheKeyUrl.searchParams.set('radius', String(normalizedRadius));
+  cacheKeyUrl.searchParams.set('provider-order', preferAdsbLol ? 'adsb-first' : 'airplanes-first');
 
   const cacheKey = new Request(cacheKeyUrl.toString(), { method: 'GET' });
   const cache = caches.default;
@@ -129,32 +127,47 @@ export async function onRequestGet(context) {
 
   const stats = await readStats(context.env, utcDay(), url.origin);
   const dailyLimit = getDailyLimit();
+  const adsbUrl = `${ADSB_LOL_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
+  const airplanesUrl = `${AIRPLANES_LIVE_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
+
   let result = null;
-  let primaryRetryAfter = null;
+  let retryAfter = null;
 
-  if (stats.airplanesLiveRequests < dailyLimit) {
-    const primaryUrl = `${AIRPLANES_LIVE_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
-    const primary = await fetchProvider('airplanes.live', primaryUrl, context, url.origin);
-
+  if (preferAdsbLol) {
+    const primary = await fetchProvider('adsb.lol', adsbUrl, context, url.origin);
     if (primary.ok) {
       result = primary;
-    } else {
-      primaryRetryAfter = primary.retryAfter;
+    } else if (stats.airplanesLiveRequests < dailyLimit) {
       context.waitUntil(recordFallbackActivation(context.env, url.origin));
+      const fallback = await fetchProvider('airplanes.live', airplanesUrl, context, url.origin);
+      retryAfter = fallback.retryAfter;
+      if (fallback.ok) result = fallback;
+    } else {
+      context.waitUntil(recordQuotaBlocked(context.env, url.origin));
     }
   } else {
-    context.waitUntil(recordQuotaBlocked(context.env, url.origin));
-    context.waitUntil(recordFallbackActivation(context.env, url.origin));
+    if (stats.airplanesLiveRequests < dailyLimit) {
+      const primary = await fetchProvider('airplanes.live', airplanesUrl, context, url.origin);
+      retryAfter = primary.retryAfter;
+      if (primary.ok) {
+        result = primary;
+      } else {
+        context.waitUntil(recordFallbackActivation(context.env, url.origin));
+      }
+    } else {
+      context.waitUntil(recordQuotaBlocked(context.env, url.origin));
+      context.waitUntil(recordFallbackActivation(context.env, url.origin));
+    }
+
+    if (!result) {
+      const fallback = await fetchProvider('adsb.lol', adsbUrl, context, url.origin);
+      if (fallback.ok) result = fallback;
+    }
   }
 
   if (!result) {
-    const fallbackUrl = `${ADSB_LOL_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
-    result = await fetchProvider('adsb.lol', fallbackUrl, context, url.origin);
-  }
-
-  if (!result.ok) {
     const headers = {};
-    if (primaryRetryAfter) headers['retry-after'] = primaryRetryAfter;
+    if (retryAfter) headers['retry-after'] = retryAfter;
     return jsonResponse({ error: 'DATA_TEMPORARILY_UNAVAILABLE' }, 502, headers);
   }
 
