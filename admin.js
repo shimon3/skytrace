@@ -22,14 +22,16 @@ function formatDate(value) {
 }
 
 function healthLabel(value) {
-  return {
-    operational: 'Opérationnel',
-    limited: 'Limité',
-    degraded: 'Dégradé',
-    unavailable: 'Indisponible',
-    'not-configured': 'Non configuré',
-    unknown: 'Pas encore testé',
-  }[value] || value;
+  return (
+    {
+      operational: 'Opérationnel',
+      limited: 'Limité',
+      degraded: 'Dégradé',
+      unavailable: 'Indisponible',
+      'not-configured': 'Non configuré',
+      unknown: 'Pas encore testé',
+    }[value] || value
+  );
 }
 
 function renderProviders(providers = []) {
@@ -79,7 +81,8 @@ async function loadStats() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (response.status === 401) throw new Error('Jeton administrateur incorrect.');
-      if (payload.error === 'ADMIN_NOT_CONFIGURED') throw new Error('Le jeton administrateur doit être configuré dans Cloudflare Pages.');
+      if (payload.error === 'ADMIN_NOT_CONFIGURED')
+        throw new Error('Le jeton administrateur doit être configuré dans Cloudflare Pages.');
       throw new Error(`Erreur ${response.status}`);
     }
 
@@ -98,9 +101,12 @@ async function loadStats() {
     progress.max = payload.dailyLimit || 500;
     progress.value = payload.airplanesLiveRequests || 0;
 
-    document.getElementById('quota-text').textContent = `${payload.percentUsed || 0} % du quota journalier principal consommé.`;
-    document.getElementById('details').textContent = `Jour UTC : ${payload.day} · Bascules de secours : ${payload.fallbackActivations || 0} · Dernier service : ${payload.lastProvider || '—'} · Dernier statut : ${payload.lastStatus ?? '—'} · Stockage : ${payload.storage}`;
-    document.getElementById('updated-at').textContent = `Actualisé : ${new Date().toLocaleTimeString('fr-FR')}`;
+    document.getElementById('quota-text').textContent =
+      `${payload.percentUsed || 0} % du quota journalier principal consommé.`;
+    document.getElementById('details').textContent =
+      `Jour UTC : ${payload.day} · Bascules de secours : ${payload.fallbackActivations || 0} · Dernier service : ${payload.lastProvider || '—'} · Dernier statut : ${payload.lastStatus ?? '—'} · Stockage : ${payload.storage}`;
+    document.getElementById('updated-at').textContent =
+      `Actualisé : ${new Date().toLocaleTimeString('fr-FR')}`;
 
     renderProviders(payload.providers || []);
     renderBars(hourlyChart, payload.hourly || [], 'hour');
