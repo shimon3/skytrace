@@ -3,7 +3,7 @@ import { normalizeAircraft } from './flight-utils.js';
 const AIRCRAFT_API = '/api/aircraft';
 const PHOTO_API = 'https://api.planespotters.net/pub/photos/reg';
 const RADIUS_NM = 250;
-const GRID_STEP_LAT = 5.5;
+const GRID_STEP_LAT = 5.2;
 const MAX_CONCURRENCY = 3;
 const DEFAULT_TILE_CACHE_MS = 300000;
 
@@ -40,6 +40,11 @@ function gridCenters(min, max, step) {
   return values;
 }
 
+function closestLatitudeToEquator(south, north) {
+  if (south <= 0 && north >= 0) return 0;
+  return Math.abs(south) < Math.abs(north) ? south : north;
+}
+
 export function viewportPoints(map, fallbackPoint) {
   if (!map?.getBounds) return [fallbackPoint];
 
@@ -52,8 +57,8 @@ export function viewportPoints(map, fallbackPoint) {
 
   if (east < west) east += 360;
 
-  const centerLat = (south + north) / 2;
-  const cosLat = Math.max(0.25, Math.cos((centerLat * Math.PI) / 180));
+  const safestLatitude = closestLatitudeToEquator(south, north);
+  const cosLat = Math.max(0.25, Math.cos((safestLatitude * Math.PI) / 180));
   const lonStep = GRID_STEP_LAT / cosLat;
   const latitudes = gridCenters(south, north, GRID_STEP_LAT);
   const longitudes = gridCenters(west, east, lonStep);
