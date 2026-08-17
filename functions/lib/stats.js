@@ -5,6 +5,10 @@ export function utcDay(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
+function utcHour(date = new Date()) {
+  return String(date.getUTCHours()).padStart(2, '0');
+}
+
 export function emptyStats(day = utcDay()) {
   return {
     day,
@@ -19,6 +23,8 @@ export function emptyStats(day = utcDay()) {
     lastProvider: null,
     lastRequestAt: null,
     lastStatus: null,
+    hourly: {},
+    providers: {},
   };
 }
 
@@ -34,23 +40,29 @@ function fallbackRequest(day, origin = 'https://skytrace.internal') {
   return new Request(`${origin}/__private_stats/${day}`);
 }
 
+function normalizeStats(stored, day) {
+  const base = emptyStats(day);
+  if (!stored || typeof stored !== 'object') return base;
+  return {
+    ...base,
+    ...stored,
+    hourly: stored.hourly && typeof stored.hourly === 'object' ? stored.hourly : {},
+    providers: stored.providers && typeof stored.providers === 'object' ? stored.providers : {},
+  };
+}
+
 export async function readStats(env, day = utcDay(), origin) {
   const key = storageKey(day);
 
   if (env?.SKYTRACE_STATS?.get) {
     const stored = await env.SKYTRACE_STATS.get(key, { type: 'json' });
-    return stored && typeof stored === 'object'
-      ? { ...emptyStats(day), ...stored }
-      : emptyStats(day);
+    return normalizeStats(stored, day);
   }
 
   const cached = await caches.default.match(fallbackRequest(day, origin));
   if (!cached) return emptyStats(day);
   try {
-    const stored = await cached.json();
-    return stored && typeof stored === 'object'
-      ? { ...emptyStats(day), ...stored }
-      : emptyStats(day);
+    return normalizeStats(await cached.json(), day);
   } catch {
     return emptyStats(day);
   }
@@ -98,8 +110,9 @@ export async function recordFallbackActivation(env, origin) {
   return stats;
 }
 
-export async function recordUpstreamRequest(env, status, origin, provider = 'unknown') {
-  const stats = await readStats(env, utcDay(), origin);
+export async function recordProviderRequest(env, status, origin, provider = 'unknown') {
+  const now = new Date();
+  const stats = await readStats(env, utcDay(now), origin);
   stats.requests += 1;
 
   if (provider === 'airplanes.live') stats.airplanesLiveRequests += 1;
@@ -108,9 +121,32 @@ export async function recordUpstreamRequest(env, status, origin, provider = 'unk
   if (status >= 200 && status < 300) stats.successes += 1;
   else stats.failures += 1;
 
+  const hour = utcHour(now);
+  const bucket = stats.hourly[hour] || { requests: 0, successes: 0, failures: 0 };
+  bucket.requests += 1;
+  if (status >= 200 && status < 300) bucket.successes += 1;
+  else bucket.failures += 1;
+  stats.hourly[hour] = bucket;
+
+  const providerStats = stats.providers[provider] || {
+    requests: 0,
+    successes: 0,
+    failures: 0,
+    lastStatus: null,
+    lastRequestAt: null,
+  };
+  providerStats.requests += 1;
+  if (status >= 200 && status < 300) providerStats.successes += 1;
+  else providerStats.failures += 1;
+  providerStats.lastStatus = status;
+  providerStats.lastRequestAt = now.toISOString();
+  stats.providers[provider] = providerStats;
+
   stats.lastProvider = provider;
-  stats.lastRequestAt = new Date().toISOString();
+  stats.lastRequestAt = now.toISOString();
   stats.lastStatus = status;
   await writeStats(env, stats, origin);
   return stats;
 }
+
+export const recordUpstreamRequest = recordProviderRequest;
