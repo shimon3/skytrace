@@ -1,5 +1,6 @@
 const UPSTREAM_BASE = 'https://api.airplanes.live/v2/point';
-const CACHE_TTL_SECONDS = 15;
+const CACHE_TTL_SECONDS = 60;
+const UPSTREAM_TIMEOUT_MS = 10000;
 
 function jsonResponse(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
@@ -40,14 +41,16 @@ export async function onRequestGet(context) {
   const normalizedLat = lat.toFixed(4);
   const normalizedLon = lon.toFixed(4);
   const normalizedRadius = Math.round(radius);
+
   const cacheKeyUrl = new URL(url.origin + '/api/aircraft');
   cacheKeyUrl.searchParams.set('lat', normalizedLat);
   cacheKeyUrl.searchParams.set('lon', normalizedLon);
   cacheKeyUrl.searchParams.set('radius', String(normalizedRadius));
+
   const cacheKey = new Request(cacheKeyUrl.toString(), { method: 'GET' });
   const cache = caches.default;
-
   const cached = await cache.match(cacheKey);
+
   if (cached) {
     const headers = new Headers(cached.headers);
     headers.set('x-skytrace-cache', 'HIT');
@@ -58,6 +61,8 @@ export async function onRequestGet(context) {
   }
 
   const upstreamUrl = `${UPSTREAM_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
 
   let upstream;
   try {
@@ -66,15 +71,23 @@ export async function onRequestGet(context) {
         accept: 'application/json',
         'user-agent': 'SkyTrace/1.0 (+https://skytrace-83z.pages.dev)',
       },
+      signal: controller.signal,
     });
   } catch (error) {
+    const timedOut = error instanceof Error && error.name === 'AbortError';
     return jsonResponse(
       {
-        error: 'AIRCRAFT_UPSTREAM_UNREACHABLE',
-        message: error instanceof Error ? error.message : String(error),
+        error: timedOut ? 'AIRCRAFT_UPSTREAM_TIMEOUT' : 'AIRCRAFT_UPSTREAM_UNREACHABLE',
+        message: timedOut
+          ? `Upstream did not answer within ${UPSTREAM_TIMEOUT_MS / 1000}s`
+          : error instanceof Error
+            ? error.message
+            : String(error),
       },
       502
     );
+  } finally {
+    clearTimeout(timeout);
   }
 
   const body = await upstream.text();
