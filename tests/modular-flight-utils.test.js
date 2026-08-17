@@ -40,6 +40,20 @@ test('normalizeAircraft uses registration and normalizes API values', () => {
   assert.equal(aircraft.lastSeen, 1000);
 });
 
+test('normalizeAircraft honors ADS-B seen_pos age', () => {
+  const aircraft = normalizeAircraft(
+    {
+      hex: 'abc124',
+      lat: 32,
+      lon: 34,
+      seen_pos: 12.5,
+    },
+    20000
+  );
+
+  assert.equal(aircraft.lastSeen, 7500);
+});
+
 test('projectPosition keeps aircraft on the ground at the received position', () => {
   const aircraft = { lat: 32, lon: 34, speed: 50, heading: 90, onGround: true, lastSeen: 0 };
   assert.deepEqual(projectPosition(aircraft, 90000), { lat: 32, lon: 34 });
