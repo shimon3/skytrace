@@ -11,6 +11,7 @@ import {
 const AIRPLANES_LIVE_BASE = 'https://api.airplanes.live/v2/point';
 const ADSB_LOL_BASE = 'https://api.adsb.lol/v2/point';
 const CACHE_TTL_SECONDS = 300;
+const STALE_TTL_SECONDS = 1800;
 const UPSTREAM_TIMEOUT_MS = 10000;
 const COORDINATE_BUCKET_DEGREES = 0.5;
 
@@ -104,15 +105,15 @@ export async function onRequestGet(context) {
   const normalizedLon = bucketCoordinate(lon).toFixed(2);
   const normalizedRadius = Math.round(radius);
 
-  // Provider preference intentionally does not affect the cache key: both
-  // providers return the same aircraft payload shape, so all visitors and
-  // provider orders can reuse a single shared Cloudflare cache entry.
   const cacheKeyUrl = new URL(url.origin + '/api/aircraft');
   cacheKeyUrl.searchParams.set('lat', normalizedLat);
   cacheKeyUrl.searchParams.set('lon', normalizedLon);
   cacheKeyUrl.searchParams.set('radius', String(normalizedRadius));
+  const staleKeyUrl = new URL(cacheKeyUrl);
+  staleKeyUrl.pathname = '/api/aircraft-stale';
 
   const cacheKey = new Request(cacheKeyUrl.toString(), { method: 'GET' });
+  const staleKey = new Request(staleKeyUrl.toString(), { method: 'GET' });
   const cache = caches.default;
   const cached = await cache.match(cacheKey);
 
@@ -128,6 +129,7 @@ export async function onRequestGet(context) {
     });
   }
 
+  const stale = await cache.match(staleKey);
   const stats = await readStats(context.env, utcDay(), url.origin);
   const dailyLimit = getDailyLimit();
   const adsbUrl = `${ADSB_LOL_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
@@ -169,13 +171,26 @@ export async function onRequestGet(context) {
   }
 
   if (!result) {
+    if (stale) {
+      context.waitUntil(recordCacheHit(context.env, url.origin));
+      return new Response(stale.body, {
+        status: 200,
+        headers: {
+          'content-type': stale.headers.get('content-type') || 'application/json; charset=utf-8',
+          'cache-control': 'private, max-age=0',
+          'x-skytrace-cache': 'STALE',
+          warning: '110 - "Response is stale"',
+        },
+      });
+    }
+
     const headers = {};
     if (retryAfter) headers['retry-after'] = retryAfter;
     return jsonResponse({ error: 'DATA_TEMPORARILY_UNAVAILABLE' }, 502, headers);
   }
 
   const body = JSON.stringify(result.payload);
-  const cacheResponse = new Response(body, {
+  const freshResponse = new Response(body, {
     status: 200,
     headers: {
       'content-type': 'application/json; charset=utf-8',
@@ -183,7 +198,16 @@ export async function onRequestGet(context) {
       'x-skytrace-provider': result.provider,
     },
   });
-  context.waitUntil(cache.put(cacheKey, cacheResponse));
+  const staleResponse = new Response(body, {
+    status: 200,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': `public, max-age=${STALE_TTL_SECONDS}`,
+      'x-skytrace-provider': result.provider,
+    },
+  });
+
+  context.waitUntil(Promise.all([cache.put(cacheKey, freshResponse), cache.put(staleKey, staleResponse)]));
 
   return new Response(body, {
     status: 200,
