@@ -1,6 +1,16 @@
+import {
+  getDailyLimit,
+  readStats,
+  recordCacheHit,
+  recordQuotaBlocked,
+  recordUpstreamRequest,
+  utcDay,
+} from '../lib/stats.js';
+
 const UPSTREAM_BASE = 'https://api.airplanes.live/v2/point';
-const CACHE_TTL_SECONDS = 60;
+const CACHE_TTL_SECONDS = 180;
 const UPSTREAM_TIMEOUT_MS = 10000;
+const COORDINATE_BUCKET_DEGREES = 0.25;
 
 function jsonResponse(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
@@ -16,6 +26,10 @@ function jsonResponse(payload, status = 200, extraHeaders = {}) {
 function parseNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function bucketCoordinate(value) {
+  return Math.round(value / COORDINATE_BUCKET_DEGREES) * COORDINATE_BUCKET_DEGREES;
 }
 
 export async function onRequestGet(context) {
@@ -35,11 +49,11 @@ export async function onRequestGet(context) {
     radius <= 0 ||
     radius > 250
   ) {
-    return jsonResponse({ error: 'INVALID_AIRCRAFT_QUERY' }, 400);
+    return jsonResponse({ error: 'INVALID_QUERY' }, 400);
   }
 
-  const normalizedLat = lat.toFixed(4);
-  const normalizedLon = lon.toFixed(4);
+  const normalizedLat = bucketCoordinate(lat).toFixed(2);
+  const normalizedLon = bucketCoordinate(lon).toFixed(2);
   const normalizedRadius = Math.round(radius);
 
   const cacheKeyUrl = new URL(url.origin + '/api/aircraft');
@@ -52,12 +66,25 @@ export async function onRequestGet(context) {
   const cached = await cache.match(cacheKey);
 
   if (cached) {
-    const headers = new Headers(cached.headers);
-    headers.set('x-skytrace-cache', 'HIT');
+    context.waitUntil(recordCacheHit(context.env, url.origin));
     return new Response(cached.body, {
       status: cached.status,
-      headers,
+      headers: {
+        'content-type': cached.headers.get('content-type') || 'application/json; charset=utf-8',
+        'cache-control': 'private, max-age=0',
+      },
     });
+  }
+
+  const stats = await readStats(context.env, utcDay(), url.origin);
+  const dailyLimit = getDailyLimit();
+  if (stats.requests >= dailyLimit) {
+    context.waitUntil(recordQuotaBlocked(context.env, url.origin));
+    return jsonResponse(
+      { error: 'DATA_TEMPORARILY_UNAVAILABLE' },
+      429,
+      { 'retry-after': '3600' }
+    );
   }
 
   const upstreamUrl = `${UPSTREAM_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
@@ -75,27 +102,21 @@ export async function onRequestGet(context) {
     });
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'AbortError';
+    context.waitUntil(recordUpstreamRequest(context.env, 599, url.origin));
     return jsonResponse(
-      {
-        error: timedOut ? 'AIRCRAFT_UPSTREAM_TIMEOUT' : 'AIRCRAFT_UPSTREAM_UNREACHABLE',
-        message: timedOut
-          ? `Upstream did not answer within ${UPSTREAM_TIMEOUT_MS / 1000}s`
-          : error instanceof Error
-            ? error.message
-            : String(error),
-      },
+      { error: timedOut ? 'DATA_TIMEOUT' : 'DATA_UNAVAILABLE' },
       502
     );
   } finally {
     clearTimeout(timeout);
   }
 
+  context.waitUntil(recordUpstreamRequest(context.env, upstream.status, url.origin));
+
   const body = await upstream.text();
   const headers = new Headers({
     'content-type': upstream.headers.get('content-type') || 'application/json; charset=utf-8',
-    'cache-control': `public, max-age=0, s-maxage=${CACHE_TTL_SECONDS}`,
-    'x-skytrace-cache': 'MISS',
-    'x-skytrace-upstream-status': String(upstream.status),
+    'cache-control': `private, max-age=0`,
   });
 
   const retryAfter = upstream.headers.get('retry-after');
@@ -107,7 +128,14 @@ export async function onRequestGet(context) {
   });
 
   if (upstream.ok) {
-    context.waitUntil(cache.put(cacheKey, response.clone()));
+    const cacheResponse = new Response(body, {
+      status: upstream.status,
+      headers: {
+        'content-type': upstream.headers.get('content-type') || 'application/json; charset=utf-8',
+        'cache-control': `public, max-age=${CACHE_TTL_SECONDS}`,
+      },
+    });
+    context.waitUntil(cache.put(cacheKey, cacheResponse));
   }
 
   return response;
