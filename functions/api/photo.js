@@ -8,7 +8,8 @@ function json(payload, status = 200) {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': status === 200 ? `public, max-age=3600, s-maxage=${CACHE_SECONDS}` : 'no-store',
+      'cache-control':
+        status === 200 ? `public, max-age=3600, s-maxage=${CACHE_SECONDS}` : 'no-store',
       'x-content-type-options': 'nosniff',
     },
   });
@@ -27,7 +28,9 @@ export async function onRequestGet(context) {
   const registration = sanitizeRegistration(requestUrl.searchParams.get('registration'));
   if (!registration) return json({ error: 'INVALID_REGISTRATION' }, 400);
 
-  const cacheKey = new Request(`${requestUrl.origin}/api/photo?registration=${encodeURIComponent(registration)}`);
+  const cacheKey = new Request(
+    `${requestUrl.origin}/api/photo?registration=${encodeURIComponent(registration)}`
+  );
   const cache = caches.default;
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
@@ -36,7 +39,9 @@ export async function onRequestGet(context) {
     const upstream = await fetch(`${PHOTO_ENDPOINT}/${encodeURIComponent(registration)}`, {
       headers: { accept: 'application/json' },
     });
-    context.waitUntil(recordProviderRequest(context.env, upstream.status, requestUrl.origin, 'planespotters.net'));
+    context.waitUntil(
+      recordProviderRequest(context.env, upstream.status, requestUrl.origin, 'planespotters.net')
+    );
     const payload = await upstream.json().catch(() => ({}));
     if (!upstream.ok) return json({ error: 'PHOTO_PROVIDER_ERROR' }, upstream.status);
 
@@ -45,7 +50,9 @@ export async function onRequestGet(context) {
     context.waitUntil(cache.put(cacheKey, response.clone()));
     return response;
   } catch {
-    context.waitUntil(recordProviderRequest(context.env, 599, requestUrl.origin, 'planespotters.net'));
+    context.waitUntil(
+      recordProviderRequest(context.env, 599, requestUrl.origin, 'planespotters.net')
+    );
     return json({ error: 'PHOTO_PROVIDER_UNAVAILABLE' }, 502);
   }
 }

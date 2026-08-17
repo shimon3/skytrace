@@ -163,7 +163,9 @@ export class AircraftApiClient {
           this.#backoffUntil = Date.now() + seconds * 1000;
         }
         if (cached) return cached.aircraft;
-        throw new Error(`HTTP ${response.status}: ${getErrorMessage(payload, 'AIRCRAFT_API_ERROR')}`);
+        throw new Error(
+          `HTTP ${response.status}: ${getErrorMessage(payload, 'AIRCRAFT_API_ERROR')}`
+        );
       }
 
       if (!payload || !Array.isArray(payload.ac)) {
@@ -199,7 +201,8 @@ export class AircraftApiClient {
     const merge = (aircraftList) => {
       for (const aircraft of aircraftList) {
         const existing = deduplicated.get(aircraft.id);
-        if (!existing || aircraft.lastSeen >= existing.lastSeen) deduplicated.set(aircraft.id, aircraft);
+        if (!existing || aircraft.lastSeen >= existing.lastSeen)
+          deduplicated.set(aircraft.id, aircraft);
       }
       if (typeof onPartial === 'function') onPartial([...deduplicated.values()]);
     };

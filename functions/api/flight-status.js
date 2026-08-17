@@ -9,7 +9,8 @@ function json(payload, status = 200, extraHeaders = {}) {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': status === 200 ? `public, max-age=60, s-maxage=${CACHE_SECONDS}` : 'no-store',
+      'Cache-Control':
+        status === 200 ? `public, max-age=60, s-maxage=${CACHE_SECONDS}` : 'no-store',
       'X-Content-Type-Options': 'nosniff',
       ...extraHeaders,
     },
@@ -72,10 +73,19 @@ function normalizeFlight(flight) {
 async function trackedFetch(url, context) {
   try {
     const response = await fetch(url, { headers: { Accept: 'application/json' } });
-    context.waitUntil(recordProviderRequest(context.env, response.status, new URL(context.request.url).origin, 'airlabs'));
+    context.waitUntil(
+      recordProviderRequest(
+        context.env,
+        response.status,
+        new URL(context.request.url).origin,
+        'airlabs'
+      )
+    );
     return response;
   } catch (error) {
-    context.waitUntil(recordProviderRequest(context.env, 599, new URL(context.request.url).origin, 'airlabs'));
+    context.waitUntil(
+      recordProviderRequest(context.env, 599, new URL(context.request.url).origin, 'airlabs')
+    );
     throw error;
   }
 }
@@ -121,7 +131,8 @@ async function requestLiveFlightByRegistration(apiKey, registration, context) {
 function callsignCandidates(callsign) {
   const candidates = [callsign];
   const withoutOperationalSuffix = callsign.match(/^([A-Z]{3}\d{1,4})[A-Z]$/)?.[1];
-  if (withoutOperationalSuffix && withoutOperationalSuffix !== callsign) candidates.push(withoutOperationalSuffix);
+  if (withoutOperationalSuffix && withoutOperationalSuffix !== callsign)
+    candidates.push(withoutOperationalSuffix);
   return [...new Set(candidates)];
 }
 
@@ -152,13 +163,18 @@ async function resolveFlight(apiKey, callsign, registration, context) {
 
 export async function onRequestGet(context) {
   const apiKey = context.env.AIRLABS_API_KEY;
-  if (!apiKey) return json({ error: 'AirLabs is not configured on this deployment.', code: 'AIRLABS_NOT_CONFIGURED' }, 503);
+  if (!apiKey)
+    return json(
+      { error: 'AirLabs is not configured on this deployment.', code: 'AIRLABS_NOT_CONFIGURED' },
+      503
+    );
 
   const requestUrl = new URL(context.request.url);
   const callsign = sanitizeCode(requestUrl.searchParams.get('callsign'));
   const registration = sanitizeCode(requestUrl.searchParams.get('registration'));
 
-  if (callsign.length < 3) return json({ error: 'A valid flight callsign is required.', code: 'INVALID_CALLSIGN' }, 400);
+  if (callsign.length < 3)
+    return json({ error: 'A valid flight callsign is required.', code: 'INVALID_CALLSIGN' }, 400);
 
   const cacheUrl = new URL(requestUrl.origin + requestUrl.pathname);
   cacheUrl.searchParams.set('callsign', callsign);
@@ -170,16 +186,37 @@ export async function onRequestGet(context) {
 
   try {
     const flight = await resolveFlight(apiKey, callsign, registration, context);
-    if (!flight) return json({ error: 'No commercial schedule was found for this aircraft.', code: 'FLIGHT_NOT_FOUND' }, 404);
+    if (!flight)
+      return json(
+        { error: 'No commercial schedule was found for this aircraft.', code: 'FLIGHT_NOT_FOUND' },
+        404
+      );
 
-    if (registration && flight.reg_number && sanitizeCode(flight.reg_number) !== registration && !callsignCandidates(callsign).includes(sanitizeCode(flight.flight_icao))) {
-      return json({ error: 'The AirLabs flight does not match the selected aircraft.', code: 'FLIGHT_MISMATCH' }, 409);
+    if (
+      registration &&
+      flight.reg_number &&
+      sanitizeCode(flight.reg_number) !== registration &&
+      !callsignCandidates(callsign).includes(sanitizeCode(flight.flight_icao))
+    ) {
+      return json(
+        {
+          error: 'The AirLabs flight does not match the selected aircraft.',
+          code: 'FLIGHT_MISMATCH',
+        },
+        409
+      );
     }
 
     const response = json({ flight: normalizeFlight(flight), source: 'AirLabs' });
     context.waitUntil(cache.put(cacheKey, response.clone()));
     return response;
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : 'Unable to contact AirLabs.', code: 'AIRLABS_REQUEST_FAILED' }, 502);
+    return json(
+      {
+        error: error instanceof Error ? error.message : 'Unable to contact AirLabs.',
+        code: 'AIRLABS_REQUEST_FAILED',
+      },
+      502
+    );
   }
 }
