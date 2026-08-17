@@ -151,7 +151,7 @@ export class AircraftApiClient {
       if (!response.ok) {
         const retryAfter = Number(response.headers.get('retry-after'));
         if (response.status === 429) {
-          const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 180;
+          const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60;
           this.#backoffUntil = Date.now() + seconds * 1000;
         }
         if (cached) return cached.aircraft;
@@ -186,6 +186,7 @@ export class AircraftApiClient {
     const cacheDurationMs = cacheDurationForZoom(zoom);
     const detailed = zoom >= 7;
     const deduplicated = new Map();
+    let completedTiles = 0;
 
     const merge = (aircraftList) => {
       for (const aircraft of aircraftList) {
@@ -203,7 +204,9 @@ export class AircraftApiClient {
         const tilePoint = points[cursor];
         cursor += 1;
         try {
-          merge(await this.#fetchTile(tilePoint, cacheDurationMs, detailed));
+          const aircraft = await this.#fetchTile(tilePoint, cacheDurationMs, detailed);
+          completedTiles += 1;
+          merge(aircraft);
         } catch (error) {
           console.error('Viewport aircraft tile failed:', error);
         }
@@ -212,6 +215,8 @@ export class AircraftApiClient {
 
     const workers = Math.min(MAX_CONCURRENCY, points.length);
     await Promise.all(Array.from({ length: workers }, () => worker()));
+
+    if (completedTiles === 0) throw new Error('VIEWPORT_DATA_UNAVAILABLE');
     return [...deduplicated.values()];
   }
 }
