@@ -8,6 +8,8 @@ const RADIUS_NM = 250;
 const TICK_MS = 180000;
 const STALE_MS = 600000;
 const MOVE_DEBOUNCE_MS = 850;
+const INITIAL_RETRY_DELAYS_MS = [3000, 8000, 15000, 30000];
+const FOLLOW_PAN_INTERVAL_MS = 1000;
 const TRAILS_STORAGE_KEY = 'skytrace_trails_v2';
 
 const CONTINENT_VIEWS = {
@@ -30,11 +32,13 @@ const elements = {
   search: document.getElementById('search'),
   photo: document.getElementById('p-photo'),
 };
+
 const api = new AircraftApiClient();
 const { map, planeLayer } = createMapView();
 map.setView([31.5, 34.8], 6, { animate: false });
 if (elements.status) elements.status.style.display = 'none';
 if (elements.cycles?.parentElement) elements.cycles.parentElement.style.display = 'none';
+
 const routeLine = L.polyline([], {
   color: '#38bdf8',
   weight: 3.5,
@@ -43,17 +47,24 @@ const routeLine = L.polyline([], {
   lineCap: 'round',
   className: 'route-glow',
 });
+const routeMarkers = L.layerGroup();
 const aircraftById = new Map();
 const filters = { altMin: null, altMax: null, hideGround: false };
+
 let selectedId = null,
   renderedAircraft = [],
   followEnabled = false,
   routeVisible = false;
 let animationFrame = null,
   lastFrameAt = 0,
+  lastFollowPanAt = 0,
   customCircle = null,
-  moveRefreshTimer = null;
+  moveRefreshTimer = null,
+  initialRetryTimer = null,
+  initialRetryIndex = 0,
+  fetchInProgress = false;
 let trails = loadTrails();
+
 function loadTrails() {
   try {
     return JSON.parse(localStorage.getItem(TRAILS_STORAGE_KEY)) || {};
@@ -75,25 +86,77 @@ function updateZoneLabel() {
   const p = currentPoint();
   elements.zone.textContent = `${p.lat.toFixed(2)}, ${p.lon.toFixed(2)}`;
 }
+function updateRouteDisplay() {
+  const trail = selectedId ? trails[selectedId] || [] : [];
+  routeLine.setLatLngs(trail);
+  routeMarkers.clearLayers();
+  if (!routeVisible || !trail.length) return;
+
+  const first = trail[0];
+  const last = trail[trail.length - 1];
+  L.circleMarker(first, {
+    radius: 4,
+    color: '#38bdf8',
+    weight: 2,
+    fillColor: '#0d1119',
+    fillOpacity: 1,
+  }).addTo(routeMarkers);
+  L.circleMarker(last, {
+    radius: 5,
+    color: '#ffffff',
+    weight: 2,
+    fillColor: '#38bdf8',
+    fillOpacity: 1,
+  }).addTo(routeMarkers);
+}
 function mergeAircraft(received, { replace = false } = {}) {
   const now = Date.now();
+  const selectedBeforeReplace = selectedId ? aircraftById.get(selectedId) : null;
   if (replace) aircraftById.clear();
   for (const a of received || []) aircraftById.set(a.id, a);
-  for (const [id, a] of aircraftById) if (now - a.lastSeen > STALE_MS) aircraftById.delete(id);
+  if (selectedBeforeReplace && !aircraftById.has(selectedId) && now - selectedBeforeReplace.lastSeen <= STALE_MS) {
+    aircraftById.set(selectedId, selectedBeforeReplace);
+  }
+  for (const [id, a] of aircraftById) {
+    if (now - a.lastSeen > STALE_MS && id !== selectedId) aircraftById.delete(id);
+  }
   updateSelectedTrail();
   if (selectedId && aircraftById.has(selectedId)) updatePanel(aircraftById.get(selectedId));
   checkSharedPlane();
 }
+function scheduleInitialRetry() {
+  if (aircraftById.size > 0 || document.hidden || initialRetryTimer) return;
+  if (initialRetryIndex >= INITIAL_RETRY_DELAYS_MS.length) return;
+  const delay = INITIAL_RETRY_DELAYS_MS[initialRetryIndex++];
+  initialRetryTimer = setTimeout(() => {
+    initialRetryTimer = null;
+    fetchTick();
+  }, delay);
+}
 async function fetchTick() {
+  if (fetchInProgress || document.hidden) return false;
+  fetchInProgress = true;
   const point = currentPoint();
   updateZoneLabel();
   try {
     const received = await api.fetchPoint(point, RADIUS_NM, {
       onPartial: (partial) => mergeAircraft(partial),
     });
-    if (received != null) mergeAircraft(received, { replace: true });
+    if (received != null) mergeAircraft(received, { replace: api.lastCoverageComplete });
+    if (aircraftById.size > 0) {
+      initialRetryIndex = 0;
+      clearTimeout(initialRetryTimer);
+      initialRetryTimer = null;
+    } else {
+      scheduleInitialRetry();
+    }
+    return true;
   } catch (error) {
     console.error('Aircraft data refresh failed:', error);
+    scheduleInitialRetry();
+    return false;
+  } finally {
+    fetchInProgress = false;
   }
 }
 function scheduleViewportRefresh() {
@@ -112,23 +175,34 @@ function updateSelectedTrail() {
     if (trail.length > 60) trail.shift();
     saveTrails();
   }
-  if (routeVisible) routeLine.setLatLngs(trail);
+  if (routeVisible) updateRouteDisplay();
   updateRouteInfo(trail.length);
 }
 function render(now) {
   if (now - lastFrameAt >= 150) {
     lastFrameAt = now;
+    const mapBounds = map.getBounds().pad(0.03);
     const visible = applyAircraftFilters([...aircraftById.values()], filters);
-    renderedAircraft = visible.map((a) => ({
-      ...a,
-      ...projectPosition(a, Date.now()),
-      selected: a.id === selectedId,
-    }));
+    renderedAircraft = visible
+      .map((a) => ({
+        ...a,
+        ...projectPosition(a, Date.now()),
+        selected: a.id === selectedId,
+      }))
+      .filter((a) => mapBounds.contains([a.lat, a.lon]) || a.id === selectedId);
     planeLayer.setData(renderedAircraft);
-    elements.count.textContent = visible.length.toLocaleString(getLanguage());
-    if (followEnabled && selectedId) {
+    elements.count.textContent = renderedAircraft.filter((a) => mapBounds.contains([a.lat, a.lon])).length.toLocaleString(getLanguage());
+
+    if (followEnabled && selectedId && now - lastFollowPanAt >= FOLLOW_PAN_INTERVAL_MS) {
       const a = renderedAircraft.find((i) => i.id === selectedId);
-      if (a) map.panTo([a.lat, a.lon], { animate: false });
+      if (a) {
+        lastFollowPanAt = now;
+        const centerPoint = map.latLngToContainerPoint(map.getCenter());
+        const aircraftPoint = map.latLngToContainerPoint([a.lat, a.lon]);
+        if (Math.hypot(centerPoint.x - aircraftPoint.x, centerPoint.y - aircraftPoint.y) > 8) {
+          map.panTo([a.lat, a.lon], { animate: false });
+        }
+      }
     }
   }
   animationFrame = requestAnimationFrame(render);
@@ -138,6 +212,7 @@ function selectAircraft(a) {
   trails[selectedId] ||= [[a.lat, a.lon]];
   updatePanel(a);
   updateRouteInfo(trails[selectedId].length);
+  if (routeVisible) updateRouteDisplay();
 }
 async function updatePanel(a) {
   elements.panel.classList.add('show');
@@ -147,12 +222,9 @@ async function updatePanel(a) {
   badge.style.display = a.type ? 'inline-block' : 'none';
   elements.registration.textContent = a.registration || '—';
   document.getElementById('p-alt').textContent = a.alt == null ? '—' : `${Math.round(a.alt)} m`;
-  document.getElementById('p-speed').textContent =
-    a.speed == null ? '—' : `${Math.round(a.speed * 3.6)} km/h`;
-  document.getElementById('p-heading').textContent =
-    a.heading == null ? '—' : `${Math.round(a.heading)}°`;
-  document.getElementById('p-vrate').textContent =
-    a.vrate == null ? '—' : `${a.vrate > 0 ? '+' : ''}${a.vrate.toFixed(1)} m/s`;
+  document.getElementById('p-speed').textContent = a.speed == null ? '—' : `${Math.round(a.speed * 3.6)} km/h`;
+  document.getElementById('p-heading').textContent = a.heading == null ? '—' : `${Math.round(a.heading)}°`;
+  document.getElementById('p-vrate').textContent = a.vrate == null ? '—' : `${a.vrate > 0 ? '+' : ''}${a.vrate.toFixed(1)} m/s`;
   document.getElementById('p-squawk').textContent = a.squawk || '—';
   document.getElementById('p-pos').textContent = `${a.lat.toFixed(2)}, ${a.lon.toFixed(2)}`;
   const photo = await getAircraftPhoto(a.registration);
@@ -168,10 +240,19 @@ function closePanel() {
   routeVisible = false;
   document.getElementById('btn-follow').classList.remove('active');
   document.getElementById('btn-route').classList.remove('active');
+  document.getElementById('btn-follow').setAttribute('aria-pressed', 'false');
+  document.getElementById('btn-route').setAttribute('aria-pressed', 'false');
   if (map.hasLayer(routeLine)) map.removeLayer(routeLine);
+  if (map.hasLayer(routeMarkers)) map.removeLayer(routeMarkers);
 }
 function updateRouteInfo(count) {
-  document.getElementById('route-info').textContent = count ? t('route_points', count) : '';
+  const info = document.getElementById('route-info');
+  if (!count) {
+    info.textContent = '';
+    return;
+  }
+  const base = t('route_points', count);
+  info.textContent = routeVisible && count === 1 ? `${base} · collecte en cours` : base;
 }
 function setCustomPoint(lat, lon) {
   if (customCircle) map.removeLayer(customCircle);
@@ -184,6 +265,7 @@ function setCustomPoint(lat, lon) {
   }).addTo(map);
   map.panTo([lat, lon]);
 }
+
 map.on('click', (e) => {
   const click = map.latLngToContainerPoint(e.latlng);
   let closest = null,
@@ -201,24 +283,46 @@ map.on('click', (e) => {
 });
 map.on('moveend', () => {
   updateZoneLabel();
-  scheduleViewportRefresh();
+  if (!followEnabled) scheduleViewportRefresh();
 });
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) scheduleViewportRefresh();
 });
 document.getElementById('panel-close').addEventListener('click', closePanel);
+
 document.getElementById('btn-follow').addEventListener('click', (e) => {
+  if (!selectedId || !aircraftById.has(selectedId)) return;
   followEnabled = !followEnabled;
   e.currentTarget.classList.toggle('active', followEnabled);
+  e.currentTarget.setAttribute('aria-pressed', followEnabled ? 'true' : 'false');
+  if (followEnabled) {
+    const a = aircraftById.get(selectedId);
+    const projected = projectPosition(a, Date.now());
+    map.setView([projected.lat, projected.lon], Math.max(map.getZoom(), 7), { animate: false });
+    clearTimeout(moveRefreshTimer);
+    fetchTick();
+  } else {
+    scheduleViewportRefresh();
+  }
 });
+
 document.getElementById('btn-route').addEventListener('click', (e) => {
+  if (!selectedId || !aircraftById.has(selectedId)) return;
   routeVisible = !routeVisible;
   e.currentTarget.classList.toggle('active', routeVisible);
+  e.currentTarget.setAttribute('aria-pressed', routeVisible ? 'true' : 'false');
   if (routeVisible) {
-    routeLine.setLatLngs(trails[selectedId] || []);
-    routeLine.addTo(map);
-  } else if (map.hasLayer(routeLine)) map.removeLayer(routeLine);
+    updateSelectedTrail();
+    updateRouteDisplay();
+    if (!map.hasLayer(routeLine)) routeLine.addTo(map);
+    if (!map.hasLayer(routeMarkers)) routeMarkers.addTo(map);
+  } else {
+    if (map.hasLayer(routeLine)) map.removeLayer(routeLine);
+    if (map.hasLayer(routeMarkers)) map.removeLayer(routeMarkers);
+  }
+  updateRouteInfo((trails[selectedId] || []).length);
 });
+
 document.getElementById('btn-share').addEventListener('click', async (e) => {
   const a = aircraftById.get(selectedId);
   if (!a) return;
@@ -232,14 +336,9 @@ document.getElementById('btn-share').addEventListener('click', async (e) => {
     window.prompt('Copie ce lien :', url);
   }
 });
-document
-  .getElementById('zones-toggle')
-  .addEventListener('click', () => document.getElementById('zones-panel').classList.toggle('show'));
-document
-  .getElementById('filters-toggle')
-  .addEventListener('click', () =>
-    document.getElementById('filters-panel').classList.toggle('show')
-  );
+
+document.getElementById('zones-toggle').addEventListener('click', () => document.getElementById('zones-panel').classList.toggle('show'));
+document.getElementById('filters-toggle').addEventListener('click', () => document.getElementById('filters-panel').classList.toggle('show'));
 document.querySelectorAll('.zone-btn').forEach((b) =>
   b.addEventListener('click', () => {
     const v = CONTINENT_VIEWS[b.dataset.region];
@@ -259,9 +358,7 @@ function refreshFilters() {
   filters.altMax = max === '' ? null : Number(max);
   filters.hideGround = document.getElementById('f-hide-ground').checked;
 }
-['f-alt-min', 'f-alt-max'].forEach((id) =>
-  document.getElementById(id).addEventListener('input', refreshFilters)
-);
+['f-alt-min', 'f-alt-max'].forEach((id) => document.getElementById(id).addEventListener('input', refreshFilters));
 document.getElementById('f-hide-ground').addEventListener('change', refreshFilters);
 document.getElementById('f-reset').addEventListener('click', () => {
   document.getElementById('f-alt-min').value = '';
@@ -286,17 +383,13 @@ elements.search.addEventListener('keydown', (e) => {
     map.flyTo([airport.lat, airport.lon], 9);
     return;
   }
-  const a = [...aircraftById.values()].find(
-    (i) => i.callsign.toUpperCase().includes(q) || i.registration.toUpperCase().includes(q)
-  );
+  const a = [...aircraftById.values()].find((i) => i.callsign.toUpperCase().includes(q) || i.registration.toUpperCase().includes(q));
   if (a) {
     selectAircraft(a);
     map.flyTo([a.lat, a.lon], Math.max(map.getZoom(), 6));
   }
 });
-document
-  .querySelectorAll('.lang-btn')
-  .forEach((b) => b.addEventListener('click', () => applyLanguage(b.dataset.lang)));
+document.querySelectorAll('.lang-btn').forEach((b) => b.addEventListener('click', () => applyLanguage(b.dataset.lang)));
 document.addEventListener('skytrace:languagechange', () => {
   updateRouteInfo(selectedId ? (trails[selectedId] || []).length : 0);
   const b = document.getElementById('zone-clear');
@@ -305,17 +398,18 @@ document.addEventListener('skytrace:languagechange', () => {
 const sharedPlane = new URLSearchParams(location.search).get('plane')?.toUpperCase();
 function checkSharedPlane() {
   if (!sharedPlane || selectedId) return;
-  const a = [...aircraftById.values()].find(
-    (i) => i.registration.toUpperCase() === sharedPlane || i.callsign.toUpperCase() === sharedPlane
-  );
+  const a = [...aircraftById.values()].find((i) => i.registration.toUpperCase() === sharedPlane || i.callsign.toUpperCase() === sharedPlane);
   if (a) {
     selectAircraft(a);
     map.flyTo([a.lat, a.lon], 7);
   }
 }
+
 applyLanguage(getLanguage());
 const resetButton = document.getElementById('zone-clear');
 if (resetButton) resetButton.textContent = 'REVENIR À ISRAËL';
+document.getElementById('btn-follow').setAttribute('aria-pressed', 'false');
+document.getElementById('btn-route').setAttribute('aria-pressed', 'false');
 updateZoneLabel();
 fetchTick();
 setInterval(() => {
@@ -329,26 +423,10 @@ if (window.L?.DomEvent) {
 elements.panel.addEventListener('pointerdown', (e) => e.stopPropagation());
 elements.panel.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
 elements.panel.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
-const routeButton = document.getElementById('btn-route');
-routeButton.setAttribute(
-  'aria-pressed',
-  routeButton.classList.contains('active') ? 'true' : 'false'
-);
-routeButton.addEventListener('click', () =>
-  requestAnimationFrame(() =>
-    routeButton.setAttribute(
-      'aria-pressed',
-      routeButton.classList.contains('active') ? 'true' : 'false'
-    )
-  )
-);
 window.addEventListener('beforeunload', () => {
   clearTimeout(moveRefreshTimer);
+  clearTimeout(initialRetryTimer);
   cancelAnimationFrame(animationFrame);
 });
 if ('serviceWorker' in navigator)
-  window.addEventListener('load', () =>
-    navigator.serviceWorker
-      .register('/sw.js')
-      .catch((error) => console.error('Service worker registration failed:', error))
-  );
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch((error) => console.error('Service worker registration failed:', error)));
