@@ -1,7 +1,7 @@
 import { normalizeAircraft } from './flight-utils.js';
 
 const AIRCRAFT_API = '/api/aircraft';
-const PHOTO_API = 'https://api.planespotters.net/pub/photos/reg';
+const PHOTO_API = '/api/photo';
 const RADIUS_NM = 250;
 const GRID_STEP_LAT = 5.2;
 const MAX_CONCURRENCY = 3;
@@ -27,8 +27,6 @@ function lowZoomLimit(zoom) {
   if (zoom <= 2) return 8;
   if (zoom === 3) return 12;
   if (zoom === 4) return 20;
-  if (zoom === 5) return 32;
-  if (zoom === 6) return 48;
   return Infinity;
 }
 
@@ -45,12 +43,6 @@ function gridCenters(min, max, step) {
 function closestLatitudeToEquator(south, north) {
   if (south <= 0 && north >= 0) return 0;
   return Math.abs(south) < Math.abs(north) ? south : north;
-}
-
-function geographicDistanceScore(point, centerLat, centerLon) {
-  const cosLat = Math.max(0.25, Math.cos((centerLat * Math.PI) / 180));
-  const lonDelta = wrapLongitude(point.lon - centerLon) * cosLat;
-  return Math.hypot(point.lat - centerLat, lonDelta);
 }
 
 export function viewportPoints(map, fallbackPoint) {
@@ -83,15 +75,15 @@ export function viewportPoints(map, fallbackPoint) {
 
   if (!points.length) return [fallbackPoint];
 
-  const center = map.getCenter?.() || fallbackPoint;
-  points.sort(
-    (a, b) =>
-      geographicDistanceScore(a, center.lat, center.lng ?? center.lon) -
-      geographicDistanceScore(b, center.lat, center.lng ?? center.lon)
-  );
-
   const limit = lowZoomLimit(zoom);
-  return points.length <= limit ? points : points.slice(0, limit);
+  if (points.length <= limit) return points;
+
+  const selected = [];
+  const stride = points.length / limit;
+  for (let index = 0; index < limit; index += 1) {
+    selected.push(points[Math.min(points.length - 1, Math.floor(index * stride + stride / 2))]);
+  }
+  return selected;
 }
 
 function cacheDurationForZoom(zoom) {
@@ -110,19 +102,15 @@ export class AircraftApiClient {
   get lastSuccessfulUpdate() {
     return this.#lastSuccessfulUpdate;
   }
-
   get lastCoverageComplete() {
     return this.#lastCoverageComplete;
   }
-
   get backoffUntil() {
     return this.#backoffUntil;
   }
-
   get nextRequestAt() {
     return this.#backoffUntil;
   }
-
   canRequestNow() {
     return Date.now() >= this.#backoffUntil;
   }
@@ -175,9 +163,7 @@ export class AircraftApiClient {
           this.#backoffUntil = Date.now() + seconds * 1000;
         }
         if (cached) return cached.aircraft;
-        throw new Error(
-          `HTTP ${response.status}: ${getErrorMessage(payload, 'AIRCRAFT_API_ERROR')}`
-        );
+        throw new Error(`HTTP ${response.status}: ${getErrorMessage(payload, 'AIRCRAFT_API_ERROR')}`);
       }
 
       if (!payload || !Array.isArray(payload.ac)) {
@@ -213,9 +199,7 @@ export class AircraftApiClient {
     const merge = (aircraftList) => {
       for (const aircraft of aircraftList) {
         const existing = deduplicated.get(aircraft.id);
-        if (!existing || aircraft.lastSeen >= existing.lastSeen) {
-          deduplicated.set(aircraft.id, aircraft);
-        }
+        if (!existing || aircraft.lastSeen >= existing.lastSeen) deduplicated.set(aircraft.id, aircraft);
       }
       if (typeof onPartial === 'function') onPartial([...deduplicated.values()]);
     };
@@ -239,7 +223,7 @@ export class AircraftApiClient {
     await Promise.all(Array.from({ length: workers }, () => worker()));
 
     if (completedTiles === 0) throw new Error('VIEWPORT_DATA_UNAVAILABLE');
-    this.#lastCoverageComplete = zoom >= 7 && completedTiles === points.length;
+    this.#lastCoverageComplete = completedTiles === points.length;
     return [...deduplicated.values()];
   }
 }
@@ -250,10 +234,12 @@ export async function getAircraftPhoto(registration) {
   if (!registration) return null;
   if (photoCache.has(registration)) return photoCache.get(registration);
   try {
-    const response = await fetch(`${PHOTO_API}/${encodeURIComponent(registration)}`);
+    const response = await fetch(`${PHOTO_API}?registration=${encodeURIComponent(registration)}`, {
+      headers: { accept: 'application/json' },
+    });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
-    const url = payload.photos?.[0]?.thumbnail_large?.src || null;
+    const url = payload?.url || null;
     photoCache.set(registration, url);
     return url;
   } catch {
