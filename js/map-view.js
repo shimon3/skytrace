@@ -56,6 +56,7 @@ const PlaneLayer = L.Layer.extend({
   },
   _reset() {
     const topLeft = this._map.containerPointToLayerPoint([0, 0]);
+    this._topLeft = topLeft;
     L.DomUtil.setPosition(this._canvas, topLeft);
     const size = this._map.getSize();
     this._canvas.width = size.x;
@@ -63,20 +64,29 @@ const PlaneLayer = L.Layer.extend({
     this.draw();
   },
   draw() {
-    if (!this._canvas) return;
+    if (!this._canvas || !this._map) return;
     const ctx = this._canvas.getContext('2d');
     ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
     const bounds = this._map.getBounds().pad(0.15);
     const detailed = this._map.getZoom() >= 7;
+    const topLeft = this._topLeft || this._map.containerPointToLayerPoint([0, 0]);
+
     for (const item of this._items || []) {
+      if (!Number.isFinite(item.lat) || !Number.isFinite(item.lon)) continue;
       if (!bounds.contains([item.lat, item.lon])) continue;
-      const point = this._map.latLngToContainerPoint([item.lat, item.lon]);
+
+      // The canvas lives in Leaflet's overlay pane, so aircraft must be
+      // projected in layer coordinates and then made relative to the canvas.
+      // Using container coordinates here can offset every aircraft after a pan.
+      const layerPoint = this._map.latLngToLayerPoint([item.lat, item.lon]);
+      const point = layerPoint.subtract(topLeft);
       const color = colorForAltitude(item.alt);
-      if (detailed || item.selected)
+
+      if (detailed || item.selected) {
         drawPlane(ctx, point.x, point.y, item.heading, color, item.selected);
-      else {
+      } else {
         ctx.beginPath();
-        ctx.arc(point.x, point.y, 2, 0, Math.PI * 2);
+        ctx.arc(point.x, point.y, 2.5, 0, Math.PI * 2);
         ctx.fillStyle = color;
         ctx.fill();
       }
