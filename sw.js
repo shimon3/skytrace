@@ -1,4 +1,4 @@
-const SW_VERSION = '20260817-8';
+const SW_VERSION = '20260817-9';
 const CACHE_NAME = `skytrace-static-${SW_VERSION}`;
 
 const PRECACHE_URLS = [
