@@ -48,6 +48,17 @@ python3 -m http.server 8080
 
 Puis ouvrir `http://localhost:8080`.
 
+### Développement avec les fonctions Cloudflare Pages (admin, proxy avions/photos)
+
+Le dossier `functions/` (routes `/api/*`) nécessite Wrangler plutôt qu'un simple serveur statique :
+
+```bash
+cp .dev.vars.example .dev.vars   # puis renseigner AIRLABS_API_KEY et ADMIN_STATS_TOKEN
+npm run dev
+```
+
+`wrangler.toml` déclare le binding KV `SKYTRACE_STATS` (stats et pause fournisseur) utilisé aussi en production. `.dev.vars` n'est jamais commité (voir `.gitignore`).
+
 ## Installation et validation
 
 ```bash

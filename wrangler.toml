@@ -1,0 +1,7 @@
+name = "skytrace"
+pages_build_output_dir = "."
+compatibility_date = "2026-07-29"
+
+[[kv_namespaces]]
+binding = "SKYTRACE_STATS"
+id = "47a5491cde154680aa6790aef28aacf3"
