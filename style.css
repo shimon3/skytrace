@@ -567,15 +567,18 @@ html[lang='he'] #search {
 .leaflet-top.leaflet-right {
   top: 64px;
 }
-.leaflet-control-layers {
-  background: var(--panel) !important;
+/* #map-prefixed so these outrank Leaflet's own higher-specificity
+   .leaflet-touch variants (e.g. ".leaflet-touch .leaflet-bar") on
+   plain specificity, with no need to force the cascade. */
+#map .leaflet-control-layers {
+  background: var(--panel);
   backdrop-filter: blur(10px);
-  border: 1px solid var(--panel-border) !important;
-  border-radius: 10px !important;
-  color: var(--text) !important;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  color: var(--text);
   font-family: var(--mono);
   font-size: 12px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
 }
 .leaflet-control-layers-list label {
   color: var(--text);
@@ -584,21 +587,21 @@ html[lang='he'] #search {
   accent-color: var(--accent);
 }
 
-.leaflet-bar {
-  border: 1px solid var(--panel-border) !important;
-  border-radius: 10px !important;
+#map .leaflet-bar {
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
 }
-.leaflet-bar a {
-  background: var(--panel) !important;
+#map .leaflet-bar a {
+  background: var(--panel);
   backdrop-filter: blur(10px);
-  color: var(--text) !important;
-  border-bottom: 1px solid var(--panel-border) !important;
+  color: var(--text);
+  border-bottom: 1px solid var(--panel-border);
 }
-.leaflet-bar a:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: var(--accent) !important;
+#map .leaflet-bar a:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent);
 }
 /* ================= Responsive ================= */
 
@@ -684,11 +687,11 @@ html[lang='he'] #search {
   #panel,
   #filters-panel,
   #zones-panel {
-    left: 10px !important;
-    right: 10px !important;
-    width: auto !important;
-    top: auto !important;
-    bottom: 64px !important;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    top: auto;
+    bottom: 64px;
     max-height: 56vh;
     overflow-y: auto;
   }

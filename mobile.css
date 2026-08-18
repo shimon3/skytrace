@@ -105,9 +105,9 @@
   #panel,
   #filters-panel,
   #zones-panel {
-    left: var(--mobile-side) !important;
-    right: var(--mobile-side) !important;
-    bottom: calc(104px + var(--mobile-bottom-safe)) !important;
+    left: var(--mobile-side);
+    right: var(--mobile-side);
+    bottom: calc(104px + var(--mobile-bottom-safe));
     max-height: calc(100dvh - 220px);
   }
 }
@@ -157,7 +157,7 @@
   #panel,
   #filters-panel,
   #zones-panel {
-    bottom: calc(58px + var(--mobile-bottom-safe)) !important;
+    bottom: calc(58px + var(--mobile-bottom-safe));
     max-height: calc(100dvh - 170px);
   }
 }
