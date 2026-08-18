@@ -165,7 +165,28 @@ test('flags FLIGHT_MISMATCH when the resolved flight belongs to a different airc
   assert.equal((await response.json()).code, 'FLIGHT_MISMATCH');
 });
 
-test('surfaces upstream errors as AIRLABS_REQUEST_FAILED', async (t) => {
+test('an AirLabs error on one candidate does not abort the rest of the cascade', async (t) => {
+  const { restore } = installFakeCaches();
+  t.after(restore);
+  const env = { AIRLABS_API_KEY: 'secret' };
+  const triedCodes = [];
+  t.mock.method(globalThis, 'fetch', async (input) => {
+    const url = new URL(String(input));
+    const code = url.searchParams.get('flight_icao');
+    triedCodes.push(code);
+    if (code === 'ELY001A') return jsonResponse({ error: { message: 'boom' } }, 200);
+    return jsonResponse({ response: { flight_icao: 'ELY001', status: 'scheduled' } });
+  });
+
+  const context = makeContext({ request: statusRequest({ callsign: 'ELY001A' }), env });
+  const response = await onRequestGet(context);
+  await context.flush();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(triedCodes, ['ELY001A', 'ELY001']);
+});
+
+test('returns FLIGHT_NOT_FOUND, not a 502, when every strategy fails with an AirLabs error', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   const env = { AIRLABS_API_KEY: 'secret' };
@@ -174,8 +195,8 @@ test('surfaces upstream errors as AIRLABS_REQUEST_FAILED', async (t) => {
   const context = makeContext({ request: statusRequest({ callsign: 'ELY001' }), env });
   const response = await onRequestGet(context);
   await context.flush();
-  assert.equal(response.status, 502);
-  assert.equal((await response.json()).code, 'AIRLABS_REQUEST_FAILED');
+  assert.equal(response.status, 404);
+  assert.equal((await response.json()).code, 'FLIGHT_NOT_FOUND');
 });
 
 test('a second identical request is served from cache without another upstream call', async (t) => {

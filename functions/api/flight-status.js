@@ -124,23 +124,51 @@ function callsignCandidates(callsign) {
   return [...new Set(candidates)];
 }
 
+// A failed lookup strategy (AirLabs error, no match, timeout, ...) should not
+// abort the whole cascade — only the final "nothing worked" outcome matters.
+// Errors are logged (visible via `wrangler pages deployment tail`) but never
+// thrown, so one bad candidate can't hide the other candidates and fallbacks.
+async function attempt(promise, label) {
+  try {
+    return await promise;
+  } catch (error) {
+    console.error(`flight-status: ${label} failed:`, error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
 async function resolveFlight(apiKey, callsign, registration, context) {
   for (const candidate of callsignCandidates(callsign)) {
-    const flight = await requestAirLabs(apiKey, 'flight_icao', candidate, context);
+    const flight = await attempt(
+      requestAirLabs(apiKey, 'flight_icao', candidate, context),
+      `flight_icao=${candidate}`
+    );
     if (flight) return flight;
   }
   if (/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(callsign)) {
-    const flight = await requestAirLabs(apiKey, 'flight_iata', callsign, context);
+    const flight = await attempt(
+      requestAirLabs(apiKey, 'flight_iata', callsign, context),
+      `flight_iata=${callsign}`
+    );
     if (flight) return flight;
   }
-  const liveFlight = await requestLiveFlightByRegistration(apiKey, registration, context);
+  const liveFlight = await attempt(
+    requestLiveFlightByRegistration(apiKey, registration, context),
+    `live reg_number=${registration}`
+  );
   if (!liveFlight) return null;
   if (liveFlight.flight_icao) {
-    const detailed = await requestAirLabs(apiKey, 'flight_icao', liveFlight.flight_icao, context);
+    const detailed = await attempt(
+      requestAirLabs(apiKey, 'flight_icao', liveFlight.flight_icao, context),
+      `flight_icao=${liveFlight.flight_icao} (from live lookup)`
+    );
     if (detailed) return detailed;
   }
   if (liveFlight.flight_iata) {
-    const detailed = await requestAirLabs(apiKey, 'flight_iata', liveFlight.flight_iata, context);
+    const detailed = await attempt(
+      requestAirLabs(apiKey, 'flight_iata', liveFlight.flight_iata, context),
+      `flight_iata=${liveFlight.flight_iata} (from live lookup)`
+    );
     if (detailed) return detailed;
   }
   return liveFlight;
