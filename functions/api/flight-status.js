@@ -132,7 +132,10 @@ async function attempt(promise, label) {
   try {
     return await promise;
   } catch (error) {
-    console.error(`flight-status: ${label} failed:`, error instanceof Error ? error.message : error);
+    console.error(
+      `flight-status: ${label} failed:`,
+      error instanceof Error ? error.message : error
+    );
     return null;
   }
 }
