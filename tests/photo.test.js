@@ -25,7 +25,12 @@ test('is paused when the admin has disabled planespotters.net', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   const env = {};
-  await writeProviderControl(env, 'planespotters.net', { enabled: false, pausedUntil: null }, ORIGIN);
+  await writeProviderControl(
+    env,
+    'planespotters.net',
+    { enabled: false, pausedUntil: null },
+    ORIGIN
+  );
   const context = makeContext({ request: photoRequest('4X-ABC'), env });
   const response = await onRequestGet(context);
   assert.equal(response.status, 503);
@@ -39,7 +44,10 @@ test('extracts the thumbnail URL from a successful lookup and caches it', async 
     fetchCalls += 1;
     assert.match(String(input), /planespotters\.net\/pub\/photos\/reg\/4X-ABC/);
     // planespotters.net returns 403 to requests with no User-Agent header.
-    assert.ok(init?.headers?.['user-agent'], 'expected a user-agent header on the upstream request');
+    assert.ok(
+      init?.headers?.['user-agent'],
+      'expected a user-agent header on the upstream request'
+    );
     return new Response(
       JSON.stringify({ photos: [{ thumbnail_large: { src: 'https://img.example/4x-abc.jpg' } }] }),
       { status: 200 }
@@ -60,7 +68,11 @@ test('extracts the thumbnail URL from a successful lookup and caches it', async 
 test('returns null when no photo exists for the registration', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
-  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ photos: [] }), { status: 200 }));
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async () => new Response(JSON.stringify({ photos: [] }), { status: 200 })
+  );
   const context = makeContext({ request: photoRequest('4X-ABC'), env: {} });
   const response = await onRequestGet(context);
   await context.flush();

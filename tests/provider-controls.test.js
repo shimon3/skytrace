@@ -22,7 +22,10 @@ test('isKnownProvider recognizes only the four supported providers', () => {
 
 test('readProviderControl throws for an unknown provider', async () => {
   const env = { SKYTRACE_STATS: new FakeKV() };
-  await assert.rejects(() => readProviderControl(env, 'not-a-provider', ORIGIN), /UNKNOWN_PROVIDER/);
+  await assert.rejects(
+    () => readProviderControl(env, 'not-a-provider', ORIGIN),
+    /UNKNOWN_PROVIDER/
+  );
 });
 
 test('a provider defaults to enabled when nothing has been stored', async () => {
@@ -67,7 +70,12 @@ test('re-enabling a paused provider clears pausedUntil', async () => {
     { enabled: false, pausedUntil: new Date(Date.now() + 1000).toISOString() },
     ORIGIN
   );
-  await writeProviderControl(env, 'planespotters.net', { enabled: true, pausedUntil: null }, ORIGIN);
+  await writeProviderControl(
+    env,
+    'planespotters.net',
+    { enabled: true, pausedUntil: null },
+    ORIGIN
+  );
   const control = await readProviderControl(env, 'planespotters.net', ORIGIN);
   assert.equal(control.enabled, true);
   assert.equal(control.pausedUntil, null);
@@ -77,10 +85,12 @@ test('readAllProviderControls returns one entry per known provider', async () =>
   const env = { SKYTRACE_STATS: new FakeKV() };
   const controls = await readAllProviderControls(env, ORIGIN);
   assert.equal(controls.length, 4);
-  assert.deepEqual(
-    controls.map((c) => c.provider).sort(),
-    ['adsb.lol', 'airlabs', 'airplanes.live', 'planespotters.net']
-  );
+  assert.deepEqual(controls.map((c) => c.provider).sort(), [
+    'adsb.lol',
+    'airlabs',
+    'airplanes.live',
+    'planespotters.net',
+  ]);
 });
 
 test('falls back to the Cache API when no KV binding is present', async () => {

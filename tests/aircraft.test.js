@@ -14,7 +14,13 @@ function bucket(value) {
   return (Math.round(value / 0.5) * 0.5).toFixed(2);
 }
 
-function aircraftRequest({ lat = 32, lon = 35, radius = 250, prefer = 'adsb.lol', ip = '1.2.3.4' } = {}) {
+function aircraftRequest({
+  lat = 32,
+  lon = 35,
+  radius = 250,
+  prefer = 'adsb.lol',
+  ip = '1.2.3.4',
+} = {}) {
   const url = new URL(`${ORIGIN}/api/aircraft`);
   url.searchParams.set('lat', String(lat));
   url.searchParams.set('lon', String(lon));
@@ -94,7 +100,8 @@ test('falls back to airplanes.live when adsb.lol fails and the daily quota is no
   t.mock.method(globalThis, 'fetch', async (input) => {
     const url = String(input);
     if (url.includes('api.adsb.lol')) return new Response('server error', { status: 500 });
-    if (url.includes('api.airplanes.live')) return new Response(JSON.stringify(AIRPLANES_PAYLOAD), { status: 200 });
+    if (url.includes('api.airplanes.live'))
+      return new Response(JSON.stringify(AIRPLANES_PAYLOAD), { status: 200 });
     throw new Error(`unexpected fetch: ${url}`);
   });
 

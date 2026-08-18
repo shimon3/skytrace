@@ -16,7 +16,11 @@ export class FakeCache {
   }
   async put(reqOrUrl, response) {
     const body = await response.text();
-    this.store.set(this.#key(reqOrUrl), { status: response.status, headers: [...response.headers], body });
+    this.store.set(this.#key(reqOrUrl), {
+      status: response.status,
+      headers: [...response.headers],
+      body,
+    });
   }
   async delete(reqOrUrl) {
     return this.store.delete(this.#key(reqOrUrl));

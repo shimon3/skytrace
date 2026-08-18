@@ -144,7 +144,10 @@ test('re-enabling a paused provider clears its pause state', async (t) => {
   const resumeAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
   await onRequestPost(
-    makeContext({ request: controlRequest({ provider: 'airlabs', action: 'pause', resumeAt }), env })
+    makeContext({
+      request: controlRequest({ provider: 'airlabs', action: 'pause', resumeAt }),
+      env,
+    })
   );
   const enableResponse = await onRequestPost(
     makeContext({ request: controlRequest({ provider: 'airlabs', action: 'enable' }), env })
