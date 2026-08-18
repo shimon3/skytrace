@@ -1,7 +1,9 @@
 const SW_VERSION = '20260817-10';
 const CACHE_NAME = `skytrace-static-${SW_VERSION}`;
+const APP_SHELL_REQUEST = new Request('/');
 
 const PRECACHE_URLS = [
+  '/',
   `/style.css?v=${SW_VERSION}`,
   `/mobile.css?v=${SW_VERSION}`,
   `/flight-status.css?v=${SW_VERSION}`,
@@ -48,6 +50,22 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
+
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(APP_SHELL_REQUEST, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(APP_SHELL_REQUEST))
+    );
+    return;
+  }
+
   if (!CACHEABLE_DESTINATIONS.has(request.destination)) return;
 
   if (request.destination === 'script') {
