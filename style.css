@@ -444,6 +444,7 @@ body {
   transform: translateX(-50%);
   z-index: 1000;
   display: flex;
+  direction: ltr;
   gap: 4px;
   background: var(--panel);
   backdrop-filter: blur(10px);
