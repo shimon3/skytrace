@@ -72,6 +72,7 @@ test('resolves a flight directly by ICAO callsign and normalizes the payload', a
 
   const context = makeContext({ request: statusRequest({ callsign: 'ELY001' }), env });
   const response = await onRequestGet(context);
+  await context.flush();
   const payload = await response.json();
 
   assert.equal(response.status, 200);
@@ -96,6 +97,7 @@ test('strips the operational suffix and retries when the full callsign is not fo
 
   const context = makeContext({ request: statusRequest({ callsign: 'ELY001A' }), env });
   const response = await onRequestGet(context);
+  await context.flush();
 
   assert.equal(response.status, 200);
   assert.deepEqual(triedCodes, ['ELY001A', 'ELY001']);
@@ -125,6 +127,7 @@ test('falls back to a live registration lookup when no callsign match exists', a
     env,
   });
   const response = await onRequestGet(context);
+  await context.flush();
   const payload = await response.json();
 
   assert.equal(response.status, 200);
@@ -139,6 +142,7 @@ test('returns FLIGHT_NOT_FOUND when nothing matches', async (t) => {
 
   const context = makeContext({ request: statusRequest({ callsign: 'ZZZ' }), env });
   const response = await onRequestGet(context);
+  await context.flush();
   assert.equal(response.status, 404);
   assert.equal((await response.json()).code, 'FLIGHT_NOT_FOUND');
 });
@@ -156,6 +160,7 @@ test('flags FLIGHT_MISMATCH when the resolved flight belongs to a different airc
     env,
   });
   const response = await onRequestGet(context);
+  await context.flush();
   assert.equal(response.status, 409);
   assert.equal((await response.json()).code, 'FLIGHT_MISMATCH');
 });
@@ -168,6 +173,7 @@ test('surfaces upstream errors as AIRLABS_REQUEST_FAILED', async (t) => {
 
   const context = makeContext({ request: statusRequest({ callsign: 'ELY001' }), env });
   const response = await onRequestGet(context);
+  await context.flush();
   assert.equal(response.status, 502);
   assert.equal((await response.json()).code, 'AIRLABS_REQUEST_FAILED');
 });

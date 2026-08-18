@@ -63,6 +63,7 @@ test('returns null when no photo exists for the registration', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ photos: [] }), { status: 200 }));
   const context = makeContext({ request: photoRequest('4X-ABC'), env: {} });
   const response = await onRequestGet(context);
+  await context.flush();
   assert.equal((await response.json()).url, null);
 });
 
@@ -72,6 +73,7 @@ test('forwards the upstream error status when the provider fails', async (t) => 
   t.mock.method(globalThis, 'fetch', async () => new Response('nope', { status: 404 }));
   const context = makeContext({ request: photoRequest('4X-ABC'), env: {} });
   const response = await onRequestGet(context);
+  await context.flush();
   assert.equal(response.status, 404);
   assert.equal((await response.json()).error, 'PHOTO_PROVIDER_ERROR');
 });
@@ -84,6 +86,7 @@ test('returns 502 when the upstream request throws', async (t) => {
   });
   const context = makeContext({ request: photoRequest('4X-ABC'), env: {} });
   const response = await onRequestGet(context);
+  await context.flush();
   assert.equal(response.status, 502);
   assert.equal((await response.json()).error, 'PHOTO_PROVIDER_UNAVAILABLE');
 });

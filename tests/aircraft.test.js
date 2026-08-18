@@ -82,6 +82,7 @@ test('a second request within the cache TTL is served from cache, not the networ
 
   const context2 = makeContext({ request: aircraftRequest(), env: {} });
   const response2 = await onRequestGet(context2);
+  await context2.flush();
 
   assert.equal(fetchCalls, 1);
   assert.equal(response2.headers.get('x-skytrace-cache'), 'HIT');
@@ -140,6 +141,7 @@ test('serves a stale cached response when every provider fails', async (t) => {
 
   const context = makeContext({ request: aircraftRequest(), env: {} });
   const response = await onRequestGet(context);
+  await context.flush();
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('x-skytrace-cache'), 'STALE');
@@ -153,6 +155,7 @@ test('returns 502 when every provider fails and there is no stale cache', async 
 
   const context = makeContext({ request: aircraftRequest(), env: {} });
   const response = await onRequestGet(context);
+  await context.flush();
 
   assert.equal(response.status, 502);
   const payload = await response.json();
