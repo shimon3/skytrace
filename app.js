@@ -360,10 +360,9 @@ document.querySelectorAll('.zone-btn').forEach((b) =>
     if (v) map.flyTo(v[0], v[1], { duration: 1 });
   })
 );
-document.getElementById('zone-clear').addEventListener('click', (e) => {
+document.getElementById('zone-clear').addEventListener('click', () => {
   if (customCircle) map.removeLayer(customCircle);
   customCircle = null;
-  e.currentTarget.textContent = 'REVENIR À ISRAËL';
   map.flyTo([31.5, 34.8], 6, { duration: 1 });
 });
 function refreshFilters() {
@@ -413,8 +412,6 @@ document
   .forEach((b) => b.addEventListener('click', () => applyLanguage(b.dataset.lang)));
 document.addEventListener('skytrace:languagechange', () => {
   updateRouteInfo(selectedId ? (trails[selectedId] || []).length : 0);
-  const b = document.getElementById('zone-clear');
-  if (b) b.textContent = 'REVENIR À ISRAËL';
 });
 const sharedPlane = new URLSearchParams(location.search).get('plane')?.toUpperCase();
 function checkSharedPlane() {
@@ -429,8 +426,6 @@ function checkSharedPlane() {
 }
 
 applyLanguage(getLanguage());
-const resetButton = document.getElementById('zone-clear');
-if (resetButton) resetButton.textContent = 'REVENIR À ISRAËL';
 document.getElementById('btn-follow').setAttribute('aria-pressed', 'false');
 document.getElementById('btn-route').setAttribute('aria-pressed', 'false');
 updateZoneLabel();
