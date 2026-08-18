@@ -153,7 +153,9 @@ async function fetchProviderWithRetry(provider, upstreamUrl, context, origin) {
   await wait(retryDelayMs(initial.retryAfter));
 
   const retry = await fetchProvider(provider, upstreamUrl, context, origin);
-  await (retry.ok ? recordRetrySuccess(context.env, origin) : recordRetryFailure(context.env, origin));
+  await (retry.ok
+    ? recordRetrySuccess(context.env, origin)
+    : recordRetryFailure(context.env, origin));
   return retry;
 }
 
