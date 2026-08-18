@@ -5,6 +5,9 @@ import {
   recordCacheHit,
   recordFallbackActivation,
   recordQuotaBlocked,
+  recordRetryAttempt,
+  recordRetryFailure,
+  recordRetrySuccess,
   recordUpstreamRequest,
   utcDay,
 } from '../lib/stats.js';
@@ -17,6 +20,26 @@ const STALE_TTL_SECONDS = 1800;
 const UPSTREAM_TIMEOUT_MS = 10000;
 const COORDINATE_BUCKET_DEGREES = 0.5;
 const RATE_LIMIT_PER_MINUTE = 60;
+
+// Statuses worth a single retry: upstream/gateway hiccups (502/503/504) and
+// our own timeout/network-failure sentinels (598/599, set below). Never
+// retried: 4xx (bad request, auth, not found, our own 429) and quota blocks,
+// since those won't succeed on a second attempt.
+const RETRYABLE_STATUSES = new Set([502, 503, 504, 598, 599]);
+const RETRY_BACKOFF_MS = 700;
+const RETRY_BACKOFF_MAX_MS = 5000;
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryDelayMs(retryAfterHeader) {
+  const seconds = Number(retryAfterHeader);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.min(seconds * 1000, RETRY_BACKOFF_MAX_MS);
+  }
+  return RETRY_BACKOFF_MS;
+}
 
 function jsonResponse(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
@@ -111,6 +134,29 @@ async function fetchProvider(provider, upstreamUrl, context, origin) {
   }
 }
 
+// Exactly one retry, only for transient failures (never a loop). 4xx
+// responses (bad request, auth, not found, our own 429) and quota blocks
+// never reach here as retryable — quota is decided by the caller before
+// fetchProvider ever runs, and 4xx statuses are simply absent from
+// RETRYABLE_STATUSES.
+async function fetchProviderWithRetry(provider, upstreamUrl, context, origin) {
+  const initial = await fetchProvider(provider, upstreamUrl, context, origin);
+  if (initial.ok || !RETRYABLE_STATUSES.has(initial.status)) return initial;
+
+  // Awaited rather than handed to context.waitUntil: retries/retrySuccesses/
+  // retryFailures share one read-modify-write record with every other stat
+  // counter, so firing them off unsequenced (even via waitUntil) races with
+  // the other provider's own retry bookkeeping and silently drops
+  // increments. The retry backoff below already delays the response, so
+  // awaiting this adds no meaningful extra latency.
+  await recordRetryAttempt(context.env, origin);
+  await wait(retryDelayMs(initial.retryAfter));
+
+  const retry = await fetchProvider(provider, upstreamUrl, context, origin);
+  await (retry.ok ? recordRetrySuccess(context.env, origin) : recordRetryFailure(context.env, origin));
+  return retry;
+}
+
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
   const lat = parseNumber(url.searchParams.get('lat'));
@@ -183,30 +229,43 @@ export async function onRequestGet(context) {
 
   if (preferAdsbLol) {
     if (adsbEnabled) {
-      const primary = await fetchProvider('adsb.lol', adsbUrl, context, url.origin);
+      const primary = await fetchProviderWithRetry('adsb.lol', adsbUrl, context, url.origin);
       if (primary.ok) result = primary;
     }
     if (!result && airplanesEnabled && stats.airplanesLiveRequests < dailyLimit) {
-      context.waitUntil(recordFallbackActivation(context.env, url.origin));
-      const fallback = await fetchProvider('airplanes.live', airplanesUrl, context, url.origin);
+      // Awaited (not waitUntil): stats.js does an unlocked read-modify-write,
+      // so an unsequenced write here can race the fallback attempt's own
+      // retry bookkeeping below and silently drop one of the two increments.
+      await recordFallbackActivation(context.env, url.origin);
+      const fallback = await fetchProviderWithRetry(
+        'airplanes.live',
+        airplanesUrl,
+        context,
+        url.origin
+      );
       retryAfter = fallback.retryAfter;
       if (fallback.ok) result = fallback;
     } else if (!result && airplanesEnabled && stats.airplanesLiveRequests >= dailyLimit) {
-      context.waitUntil(recordQuotaBlocked(context.env, url.origin));
+      await recordQuotaBlocked(context.env, url.origin);
     }
   } else {
     if (airplanesEnabled && stats.airplanesLiveRequests < dailyLimit) {
-      const primary = await fetchProvider('airplanes.live', airplanesUrl, context, url.origin);
+      const primary = await fetchProviderWithRetry(
+        'airplanes.live',
+        airplanesUrl,
+        context,
+        url.origin
+      );
       retryAfter = primary.retryAfter;
       if (primary.ok) result = primary;
-      else if (adsbEnabled) context.waitUntil(recordFallbackActivation(context.env, url.origin));
+      else if (adsbEnabled) await recordFallbackActivation(context.env, url.origin);
     } else if (airplanesEnabled && stats.airplanesLiveRequests >= dailyLimit) {
-      context.waitUntil(recordQuotaBlocked(context.env, url.origin));
-      if (adsbEnabled) context.waitUntil(recordFallbackActivation(context.env, url.origin));
+      await recordQuotaBlocked(context.env, url.origin);
+      if (adsbEnabled) await recordFallbackActivation(context.env, url.origin);
     }
 
     if (!result && adsbEnabled) {
-      const fallback = await fetchProvider('adsb.lol', adsbUrl, context, url.origin);
+      const fallback = await fetchProviderWithRetry('adsb.lol', adsbUrl, context, url.origin);
       if (fallback.ok) result = fallback;
     }
   }

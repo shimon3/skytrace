@@ -20,6 +20,9 @@ export function emptyStats(day = utcDay()) {
     airplanesLiveRequests: 0,
     adsbLolRequests: 0,
     fallbackActivations: 0,
+    retries: 0,
+    retrySuccesses: 0,
+    retryFailures: 0,
     lastProvider: null,
     lastRequestAt: null,
     lastStatus: null,
@@ -106,6 +109,27 @@ export async function recordQuotaBlocked(env, origin) {
 export async function recordFallbackActivation(env, origin) {
   const stats = await readStats(env, utcDay(), origin);
   stats.fallbackActivations += 1;
+  await writeStats(env, stats, origin);
+  return stats;
+}
+
+export async function recordRetryAttempt(env, origin) {
+  const stats = await readStats(env, utcDay(), origin);
+  stats.retries += 1;
+  await writeStats(env, stats, origin);
+  return stats;
+}
+
+export async function recordRetrySuccess(env, origin) {
+  const stats = await readStats(env, utcDay(), origin);
+  stats.retrySuccesses += 1;
+  await writeStats(env, stats, origin);
+  return stats;
+}
+
+export async function recordRetryFailure(env, origin) {
+  const stats = await readStats(env, utcDay(), origin);
+  stats.retryFailures += 1;
   await writeStats(env, stats, origin);
   return stats;
 }
