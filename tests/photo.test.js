@@ -35,9 +35,11 @@ test('extracts the thumbnail URL from a successful lookup and caches it', async 
   const { restore } = installFakeCaches();
   t.after(restore);
   let fetchCalls = 0;
-  t.mock.method(globalThis, 'fetch', async (input) => {
+  t.mock.method(globalThis, 'fetch', async (input, init) => {
     fetchCalls += 1;
     assert.match(String(input), /planespotters\.net\/pub\/photos\/reg\/4X-ABC/);
+    // planespotters.net returns 403 to requests with no User-Agent header.
+    assert.ok(init?.headers?.['user-agent'], 'expected a user-agent header on the upstream request');
     return new Response(
       JSON.stringify({ photos: [{ thumbnail_large: { src: 'https://img.example/4x-abc.jpg' } }] }),
       { status: 200 }

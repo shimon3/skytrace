@@ -42,7 +42,10 @@ export async function onRequestGet(context) {
 
   try {
     const upstream = await fetch(`${PHOTO_ENDPOINT}/${encodeURIComponent(registration)}`, {
-      headers: { accept: 'application/json' },
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'SkyTrace/1.0 (+https://skytrace-83z.pages.dev)',
+      },
     });
     context.waitUntil(
       recordProviderRequest(context.env, upstream.status, requestUrl.origin, 'planespotters.net')
