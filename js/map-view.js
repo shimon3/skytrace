@@ -103,7 +103,7 @@ const PlaneLayer = L.Layer.extend({
 export function createMapView() {
   const map = L.map('map', {
     zoomControl: false,
-    attributionControl: false,
+    attributionControl: true,
     worldCopyJump: true,
     minZoom: 2,
     maxZoom: 11,
@@ -114,22 +114,32 @@ export function createMapView() {
   window.__skytraceMap = map;
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
-  const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-    subdomains: 'abcd',
-    maxZoom: 19,
-  }).addTo(map);
+
+  // CARTO raster basemaps now require an API key. Use no-key providers
+  // here so the map never displays the "API KEY REQUIRED" watermark.
+  const esriAttribution = 'Tiles &copy; Esri';
+  const osmAttribution = '&copy; OpenStreetMap contributors';
+
+  const dark = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 16, attribution: esriAttribution }
+  ).addTo(map);
+
   const satellite = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom: 19 }
+    { maxZoom: 19, attribution: esriAttribution }
   );
-  const colored = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    { subdomains: 'abcd', maxZoom: 19 }
-  );
+
+  const colored = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: osmAttribution,
+  });
+
   const labels = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
-    { subdomains: 'abcd', maxZoom: 19, opacity: 0.7 }
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 16, attribution: esriAttribution, opacity: 0.85 }
   ).addTo(map);
+
   let control;
   const rebuildLayers = () => {
     if (control) map.removeControl(control);
@@ -144,9 +154,11 @@ export function createMapView() {
   rebuildLayers();
   document.addEventListener('skytrace:languagechange', rebuildLayers);
   map.on('baselayerchange', (event) => {
-    if (event.layer === colored) {
-      if (map.hasLayer(labels)) map.removeLayer(labels);
-    } else if (!map.hasLayer(labels)) labels.addTo(map);
+    if (event.layer === dark) {
+      if (!map.hasLayer(labels)) labels.addTo(map);
+    } else if (map.hasLayer(labels)) {
+      map.removeLayer(labels);
+    }
   });
   const planeLayer = new PlaneLayer().addTo(map);
   return { map, planeLayer };
