@@ -4,7 +4,7 @@ const AIRCRAFT_API = '/api/aircraft';
 const PHOTO_API = '/api/photo';
 const RADIUS_NM = 250;
 const GRID_STEP_LAT = 5.2;
-const MAX_CONCURRENCY = 3;
+const MAX_CONCURRENCY = 2;
 const DEFAULT_TILE_CACHE_MS = 300000;
 
 function getErrorMessage(payload, fallback) {
@@ -24,10 +24,12 @@ function wrapLongitude(value) {
 }
 
 function lowZoomLimit(zoom) {
-  if (zoom <= 2) return 8;
-  if (zoom === 3) return 12;
-  if (zoom === 4) return 20;
-  return Infinity;
+  if (zoom <= 2) return 4;
+  if (zoom === 3) return 6;
+  if (zoom === 4) return 8;
+  if (zoom === 5) return 10;
+  if (zoom === 6) return 12;
+  return 16;
 }
 
 function gridCenters(min, max, step) {
@@ -210,6 +212,7 @@ export class AircraftApiClient {
     let cursor = 0;
     const worker = async () => {
       while (cursor < points.length) {
+        if (Date.now() < this.#backoffUntil) break;
         const tilePoint = points[cursor];
         cursor += 1;
         try {
@@ -218,6 +221,7 @@ export class AircraftApiClient {
           merge(aircraft);
         } catch (error) {
           console.error('Viewport aircraft tile failed:', error);
+          if (Date.now() < this.#backoffUntil) break;
         }
       }
     };
