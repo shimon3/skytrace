@@ -297,10 +297,14 @@ export class AircraftApiClient {
       }
     };
 
-    if (remaining.length) void fillViewport();
+    // Keep the viewport generation alive until its initial coverage pass has finished.
+    // Previously this ran detached in the background; move/visibility refreshes could then
+    // start a new generation and cancel the pass before any non-central tile succeeded.
+    if (remaining.length) await fillViewport();
     else this.#lastCoverageComplete = completedTiles === points.length;
 
-    if (completedTiles === 0 && !remaining.length) throw new Error('VIEWPORT_DATA_UNAVAILABLE');
+    if (generation !== this.#viewportGeneration) return [];
+    if (completedTiles === 0) throw new Error('VIEWPORT_DATA_UNAVAILABLE');
     return [...deduplicated.values()];
   }
 }
