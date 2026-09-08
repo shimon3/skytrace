@@ -1,11 +1,35 @@
 import { providerEnabled } from '../lib/provider-controls.js';
-import { cooldownSecondsForStatus, providerCoolingDown, setProviderCooldown } from '../lib/provider-cooldown.js';
+import {
+  cooldownSecondsForStatus,
+  providerCoolingDown,
+  setProviderCooldown,
+} from '../lib/provider-cooldown.js';
 import { recordProviderRequest } from '../lib/stats.js';
 
 const PROVIDERS = {
-  'adsb.lol': 'https://api.adsb.lol/v2',
-  'airplanes.live': 'https://api.airplanes.live/v2',
+  'adsb.fi': {
+    base: 'https://opendata.adsb.fi/api/v2',
+    path(kind, query) {
+      if (kind === 'hex') return `icao/${encodeURIComponent(query)}`;
+      if (kind === 'reg') return `registration/${encodeURIComponent(query)}`;
+      return `callsign/${encodeURIComponent(query)}`;
+    },
+  },
+  'adsb.lol': {
+    base: 'https://api.adsb.lol/v2',
+    path(kind, query) {
+      return `${kind}/${encodeURIComponent(query)}`;
+    },
+  },
+  'airplanes.live': {
+    base: 'https://api.airplanes.live/v2',
+    path(kind, query) {
+      return `${kind}/${encodeURIComponent(query)}`;
+    },
+  },
 };
+
+const PROVIDER_ORDER = ['adsb.fi', 'adsb.lol', 'airplanes.live'];
 const CACHE_SECONDS = 30;
 const NEGATIVE_CACHE_SECONDS = 15;
 const TIMEOUT_MS = 5500;
@@ -78,9 +102,11 @@ async function cacheResult(origin, query, payload, seconds, context) {
 async function requestProvider(provider, kind, query, context, origin) {
   if (await providerCoolingDown(provider, origin)) return null;
 
+  const config = PROVIDERS[provider];
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  const url = `${PROVIDERS[provider]}/${kind}/${encodeURIComponent(query)}`;
+  const url = `${config.base}/${config.path(kind, query)}`;
+
   try {
     const response = await fetch(url, {
       headers: {
@@ -124,11 +150,12 @@ export async function onRequestGet(context) {
   if (cached) {
     const payload = await cached.json().catch(() => null);
     if (payload?.aircraft) return json(payload, 200, { 'x-skytrace-cache': 'HIT' });
-    if (payload?.notFound) return json({ error: 'AIRCRAFT_NOT_FOUND' }, 404, { 'x-skytrace-cache': 'HIT' });
+    if (payload?.notFound)
+      return json({ error: 'AIRCRAFT_NOT_FOUND' }, 404, { 'x-skytrace-cache': 'HIT' });
   }
 
   const enabled = [];
-  for (const provider of Object.keys(PROVIDERS)) {
+  for (const provider of PROVIDER_ORDER) {
     if (
       (await providerEnabled(context.env, provider, origin)) &&
       !(await providerCoolingDown(provider, origin))
