@@ -4,7 +4,7 @@ const AIRCRAFT_API = '/api/aircraft';
 const PHOTO_API = '/api/photo';
 const RADIUS_NM = 250;
 const GRID_STEP_LAT = 5.2;
-const MAX_CONCURRENCY = 4;
+const MAX_CONCURRENCY = 2;
 const DEFAULT_TILE_CACHE_MS = 300000;
 const CLIENT_TILE_TIMEOUT_MS = 4500;
 
@@ -25,12 +25,11 @@ function wrapLongitude(value) {
 }
 
 function lowZoomLimit(zoom) {
-  if (zoom <= 2) return 4;
-  if (zoom === 3) return 6;
-  if (zoom === 4) return 8;
-  if (zoom === 5) return 10;
-  if (zoom === 6) return 12;
-  return 16;
+  if (zoom <= 3) return 3;
+  if (zoom <= 5) return 4;
+  if (zoom === 6) return 6;
+  if (zoom === 7) return 8;
+  return 10;
 }
 
 function gridCenters(min, max, step) {
@@ -96,7 +95,6 @@ export function viewportPoints(map, fallbackPoint) {
   const limit = lowZoomLimit(zoom);
   if (ordered.length <= limit) return ordered;
 
-  // Always keep the center first, then sample the remaining viewport evenly.
   const selected = [ordered[0]];
   const rest = ordered.slice(1);
   const wanted = limit - 1;
@@ -108,8 +106,8 @@ export function viewportPoints(map, fallbackPoint) {
 }
 
 function cacheDurationForZoom(zoom) {
-  if (zoom >= 8) return 120000;
-  if (zoom >= 6) return 180000;
+  if (zoom >= 8) return 180000;
+  if (zoom >= 6) return 240000;
   return DEFAULT_TILE_CACHE_MS;
 }
 
@@ -191,6 +189,8 @@ export class AircraftApiClient {
         if (response.status === 429) {
           const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60;
           this.#backoffUntil = Date.now() + seconds * 1000;
+        } else if (response.status === 502 || response.status === 503) {
+          this.#backoffUntil = Date.now() + 30000;
         }
         if (cached) return cached.aircraft;
         throw new Error(
@@ -239,8 +239,6 @@ export class AircraftApiClient {
       if (typeof onPartial === 'function') onPartial([...deduplicated.values()]);
     };
 
-    // Fetch the viewport center first. This makes the first aircraft appear as soon as
-    // one request finishes instead of waiting for every tile covering the screen.
     const centerPoint = points[0] || point;
     try {
       const centerAircraft = await this.#fetchTile(centerPoint, cacheDurationMs, detailed);
@@ -253,9 +251,6 @@ export class AircraftApiClient {
 
     const remaining = points.slice(1);
 
-    // Fill the rest of the viewport in the background. A newer viewport generation
-    // automatically makes these workers stop, so rapid panning does not keep loading
-    // old countries while the user is already looking elsewhere.
     const fillViewport = async () => {
       let cursor = 0;
       const worker = async () => {
