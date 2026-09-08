@@ -211,7 +211,7 @@ test('an admin-paused ADSB.fi is skipped in favor of adsb.lol', async (t) => {
   assert.equal(response.headers.get('x-skytrace-provider'), 'adsb.lol');
 });
 
-test('retries once on a 502 and serves the retry result on success', async (t) => {
+test('a retryable ADSB.fi failure immediately falls back before retrying', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   let attempts = 0;
@@ -227,11 +227,11 @@ test('retries once on a 502 and serves the retry result on success', async (t) =
 
   assert.equal(attempts, 2);
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get('x-skytrace-provider'), 'adsb.fi');
+  assert.equal(response.headers.get('x-skytrace-provider'), 'adsb.lol');
 
   const stats = await readStats(context.env, utcDay(), ORIGIN);
-  assert.equal(stats.retries, 1);
-  assert.equal(stats.retrySuccesses, 1);
+  assert.equal(stats.retries, 0);
+  assert.equal(stats.retrySuccesses, 0);
 });
 
 test('each active provider gets at most one retry on retryable failures', async (t) => {
