@@ -37,12 +37,12 @@ const PROVIDER_ORDER = ['adsb.fi', 'adsb.lol', 'airplanes.live'];
 const BROAD_CACHE_TTL_SECONDS = 300;
 const DETAIL_CACHE_TTL_SECONDS = 120;
 const STALE_TTL_SECONDS = 1800;
-const UPSTREAM_TIMEOUT_MS = 5000;
+const UPSTREAM_TIMEOUT_MS = 2800;
 const COORDINATE_BUCKET_DEGREES = 1;
 const RATE_LIMIT_PER_MINUTE = 60;
 const RETRYABLE_STATUSES = new Set([502, 503, 504, 598, 599]);
-const RETRY_BACKOFF_MS = 350;
-const RETRY_BACKOFF_MAX_MS = 1800;
+const RETRY_BACKOFF_MS = 250;
+const RETRY_BACKOFF_MAX_MS = 1200;
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -164,27 +164,6 @@ async function fetchProvider(provider, upstreamUrl, context, origin) {
   }
 }
 
-async function fetchProviderWithRetry(provider, upstreamUrl, context, origin) {
-  const initial = await fetchProvider(provider, upstreamUrl, context, origin);
-  if (
-    initial.ok ||
-    initial.cooledDown ||
-    !RETRYABLE_STATUSES.has(initial.status) ||
-    (await providerCoolingDown(provider, origin))
-  ) {
-    return initial;
-  }
-
-  await recordRetryAttempt(context.env, origin);
-  await wait(retryDelayMs(initial.retryAfter));
-
-  const retry = await fetchProvider(provider, upstreamUrl, context, origin);
-  await (retry.ok
-    ? recordRetrySuccess(context.env, origin)
-    : recordRetryFailure(context.env, origin));
-  return retry;
-}
-
 function staleResponse(stale, cacheState = 'STALE') {
   return new Response(stale.body, {
     status: 200,
@@ -196,6 +175,59 @@ function staleResponse(stale, cacheState = 'STALE') {
       warning: '110 - "Response is stale"',
     },
   });
+}
+
+async function getActiveProviders(context, origin) {
+  const active = [];
+  const diagnostics = [];
+  for (const provider of PROVIDER_ORDER) {
+    const enabled = await providerEnabled(context.env, provider, origin);
+    if (!enabled) {
+      diagnostics.push({ provider, attempted: false, reason: 'DISABLED_OR_PAUSED' });
+      continue;
+    }
+    if (await providerCoolingDown(provider, origin)) {
+      diagnostics.push({ provider, attempted: false, reason: 'COOLDOWN' });
+      continue;
+    }
+    active.push(provider);
+  }
+  return { active, diagnostics };
+}
+
+async function firstPass(providers, normalizedLat, normalizedLon, normalizedRadius, context, origin) {
+  const attempts = [];
+  for (let index = 0; index < providers.length; index += 1) {
+    const provider = providers[index];
+    if (index > 0) await recordFallbackActivation(context.env, origin);
+    const upstreamUrl = PROVIDERS[provider].point(normalizedLat, normalizedLon, normalizedRadius);
+    const candidate = await fetchProvider(provider, upstreamUrl, context, origin);
+    attempts.push(candidate);
+    if (candidate.ok) return { result: candidate, attempts };
+  }
+  return { result: null, attempts };
+}
+
+async function retryFailedProviders(attempts, normalizedLat, normalizedLon, normalizedRadius, context, origin) {
+  for (const attempt of attempts) {
+    if (attempt.ok || attempt.cooledDown || !RETRYABLE_STATUSES.has(attempt.status)) continue;
+    if (await providerCoolingDown(attempt.provider, origin)) continue;
+
+    await recordRetryAttempt(context.env, origin);
+    await wait(retryDelayMs(attempt.retryAfter));
+    const upstreamUrl = PROVIDERS[attempt.provider].point(
+      normalizedLat,
+      normalizedLon,
+      normalizedRadius
+    );
+    const retry = await fetchProvider(attempt.provider, upstreamUrl, context, origin);
+    if (retry.ok) {
+      await recordRetrySuccess(context.env, origin);
+      return retry;
+    }
+    await recordRetryFailure(context.env, origin);
+  }
+  return null;
 }
 
 export async function onRequestGet(context) {
@@ -263,41 +295,26 @@ export async function onRequestGet(context) {
 
   await readStats(context.env, utcDay(), url.origin);
 
-  let result = null;
-  let retryAfter = null;
-  let attempted = 0;
-  const providerDiagnostics = [];
+  const providerState = await getActiveProviders(context, url.origin);
+  const liveAttempt = await firstPass(
+    providerState.active,
+    normalizedLat,
+    normalizedLon,
+    normalizedRadius,
+    context,
+    url.origin
+  );
 
-  for (const provider of PROVIDER_ORDER) {
-    const enabled = await providerEnabled(context.env, provider, url.origin);
-    if (!enabled) {
-      providerDiagnostics.push({ provider, attempted: false, reason: 'DISABLED_OR_PAUSED' });
-      continue;
-    }
-
-    const cooling = await providerCoolingDown(provider, url.origin);
-    if (cooling) {
-      providerDiagnostics.push({ provider, attempted: false, reason: 'COOLDOWN' });
-      continue;
-    }
-
-    if (attempted > 0) await recordFallbackActivation(context.env, url.origin);
-    attempted += 1;
-
-    const upstreamUrl = PROVIDERS[provider].point(normalizedLat, normalizedLon, normalizedRadius);
-    const candidate = await fetchProviderWithRetry(provider, upstreamUrl, context, url.origin);
-    retryAfter = candidate.retryAfter || retryAfter;
-    providerDiagnostics.push({
-      provider,
-      attempted: true,
-      status: candidate.status,
-      ok: candidate.ok,
-      reason: candidate.reason || null,
-    });
-    if (candidate.ok) {
-      result = candidate;
-      break;
-    }
+  let result = liveAttempt.result;
+  if (!result && liveAttempt.attempts.length) {
+    result = await retryFailedProviders(
+      liveAttempt.attempts,
+      normalizedLat,
+      normalizedLon,
+      normalizedRadius,
+      context,
+      url.origin
+    );
   }
 
   if (!result) {
@@ -306,13 +323,23 @@ export async function onRequestGet(context) {
       return staleResponse(stale);
     }
 
+    const retryAfter = liveAttempt.attempts.map((item) => item.retryAfter).find(Boolean);
     const headers = {};
     if (retryAfter) headers['retry-after'] = retryAfter;
     return jsonResponse(
       {
         error: 'DATA_TEMPORARILY_UNAVAILABLE',
         message: 'Aucun fournisseur de positions live n’est disponible pour le moment.',
-        providers: providerDiagnostics,
+        providers: [
+          ...providerState.diagnostics,
+          ...liveAttempt.attempts.map((item) => ({
+            provider: item.provider,
+            attempted: true,
+            status: item.status,
+            ok: item.ok,
+            reason: item.reason || null,
+          })),
+        ],
       },
       502,
       headers
