@@ -7,6 +7,7 @@ import {
 import { recordProviderRequest } from '../lib/stats.js';
 
 const POSITION_PROVIDERS = new Set(['adsb.fi', 'adsb.one', 'adsb.lol', 'airplanes.live']);
+const TEST_TIMEOUT_MS = 8000;
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -36,52 +37,104 @@ function authorized(context) {
   return { ok: true };
 }
 
-async function testProvider(context, provider, origin) {
-  let response;
+function providerTestRequest(context, provider) {
   if (provider === 'adsb.fi') {
-    response = await fetch('https://opendata.adsb.fi/api/v3/lat/31.5/lon/34.8/dist/25', {
+    return {
+      url: 'https://opendata.adsb.fi/api/v3/lat/31.5/lon/34.8/dist/25',
       headers: {
         accept: 'application/json',
         'user-agent': 'SkyTrace/1.0 (+https://skytrace-83z.pages.dev)',
       },
-    });
-  } else if (provider === 'adsb.one') {
-    response = await fetch('https://api.adsb.one/v2/point/31.5/34.8/25', {
+    };
+  }
+  if (provider === 'adsb.one') {
+    return {
+      url: 'https://api.adsb.one/v2/point/31.5/34.8/25',
       headers: {
         accept: 'application/json',
         'user-agent': 'SkyTrace/1.0 (+https://skytrace-83z.pages.dev)',
       },
-    });
-  } else if (provider === 'adsb.lol') {
-    response = await fetch('https://api.adsb.lol/v2/point/31.5/34.8/25', {
+    };
+  }
+  if (provider === 'adsb.lol') {
+    return {
+      url: 'https://api.adsb.lol/v2/point/31.5/34.8/25',
       headers: { accept: 'application/json' },
-    });
-  } else if (provider === 'airplanes.live') {
+    };
+  }
+  if (provider === 'airplanes.live') {
     if (String(context.env?.AIRPLANES_LIVE_ACCESS || '') !== '1') {
-      return { ok: false, status: 503, code: 'NOT_CONFIGURED' };
+      return { error: 'NOT_CONFIGURED', status: 503 };
     }
-    response = await fetch('https://api.airplanes.live/v2/point/31.5/34.8/25', {
+    return {
+      url: 'https://api.airplanes.live/v2/point/31.5/34.8/25',
       headers: {
         accept: 'application/json',
         'user-agent': 'SkyTrace/1.0 (+https://skytrace-83z.pages.dev)',
       },
-    });
-  } else if (provider === 'airlabs') {
+    };
+  }
+  if (provider === 'airlabs') {
     const apiKey = context.env?.AIRLABS_API_KEY;
-    if (!apiKey) return { ok: false, status: 503, code: 'NOT_CONFIGURED' };
+    if (!apiKey) return { error: 'NOT_CONFIGURED', status: 503 };
     const url = new URL('https://airlabs.co/api/v9/flight');
     url.searchParams.set('flight_icao', 'ELY001');
     url.searchParams.set('api_key', apiKey);
-    response = await fetch(url, { headers: { accept: 'application/json' } });
-  } else if (provider === 'planespotters.net') {
-    response = await fetch('https://api.planespotters.net/pub/photos/reg/N12345', {
+    return { url: url.toString(), headers: { accept: 'application/json' } };
+  }
+  if (provider === 'planespotters.net') {
+    return {
+      url: 'https://api.planespotters.net/pub/photos/reg/N12345',
       headers: { accept: 'application/json' },
-    });
+    };
+  }
+  return { error: 'UNKNOWN_PROVIDER', status: 400 };
+}
+
+async function safeRecordProviderRequest(context, status, origin, provider) {
+  try {
+    await recordProviderRequest(context.env, status, origin, provider);
+  } catch (error) {
+    console.error(
+      `admin-provider-control: unable to record stats for ${provider}:`,
+      error instanceof Error ? error.message : error
+    );
+  }
+}
+
+async function testProvider(context, provider, origin) {
+  const request = providerTestRequest(context, provider);
+  if (request.error) {
+    return { ok: false, status: request.status, code: request.error };
   }
 
-  const status = response?.status ?? 599;
-  await recordProviderRequest(context.env, status, origin, provider);
-  return { ok: status >= 200 && status < 300, status };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(request.url, {
+      headers: request.headers,
+      signal: controller.signal,
+    });
+    await safeRecordProviderRequest(context, response.status, origin, provider);
+    return {
+      ok: response.status >= 200 && response.status < 300,
+      status: response.status,
+      code: response.ok ? 'OK' : 'UPSTREAM_HTTP_ERROR',
+    };
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === 'AbortError';
+    const status = timedOut ? 598 : 599;
+    await safeRecordProviderRequest(context, status, origin, provider);
+    return {
+      ok: false,
+      status,
+      code: timedOut ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_NETWORK_ERROR',
+      message: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function onRequestPost(context) {
@@ -97,7 +150,10 @@ export async function onRequestPost(context) {
 
   if (action === 'test') {
     const result = await testProvider(context, provider, origin);
-    return json({ provider, action, ...result }, result.ok ? 200 : 502);
+    // A provider test failing is an expected diagnostic result, not an internal
+    // endpoint failure. Always return 200 so the admin UI can show the real
+    // upstream status (403/429/598/599/etc.) instead of a generic HTTP 500/502.
+    return json({ provider, action, ...result }, 200);
   }
 
   if (action === 'enable') {
