@@ -1,11 +1,13 @@
 import { providerEnabled } from '../lib/provider-controls.js';
-import { cooldownSecondsForStatus, providerCoolingDown, setProviderCooldown } from '../lib/provider-cooldown.js';
 import {
-  getDailyLimit,
+  cooldownSecondsForStatus,
+  providerCoolingDown,
+  setProviderCooldown,
+} from '../lib/provider-cooldown.js';
+import {
   readStats,
   recordCacheHit,
   recordFallbackActivation,
-  recordQuotaBlocked,
   recordRetryAttempt,
   recordRetryFailure,
   recordRetrySuccess,
@@ -13,15 +15,31 @@ import {
   utcDay,
 } from '../lib/stats.js';
 
-const AIRPLANES_LIVE_BASE = 'https://api.airplanes.live/v2/point';
-const ADSB_LOL_BASE = 'https://api.adsb.lol/v2/point';
+const PROVIDERS = {
+  'adsb.fi': {
+    point(lat, lon, radius) {
+      return `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${radius}`;
+    },
+  },
+  'adsb.lol': {
+    point(lat, lon, radius) {
+      return `https://api.adsb.lol/v2/point/${lat}/${lon}/${radius}`;
+    },
+  },
+  'airplanes.live': {
+    point(lat, lon, radius) {
+      return `https://api.airplanes.live/v2/point/${lat}/${lon}/${radius}`;
+    },
+  },
+};
+
+const PROVIDER_ORDER = ['adsb.fi', 'adsb.lol', 'airplanes.live'];
 const BROAD_CACHE_TTL_SECONDS = 300;
 const DETAIL_CACHE_TTL_SECONDS = 120;
 const STALE_TTL_SECONDS = 1800;
 const UPSTREAM_TIMEOUT_MS = 6500;
 const COORDINATE_BUCKET_DEGREES = 1;
 const RATE_LIMIT_PER_MINUTE = 60;
-
 const RETRYABLE_STATUSES = new Set([502, 503, 504, 598, 599]);
 const RETRY_BACKOFF_MS = 500;
 const RETRY_BACKOFF_MAX_MS = 3500;
@@ -182,7 +200,6 @@ export async function onRequestGet(context) {
   const lat = parseNumber(url.searchParams.get('lat'));
   const lon = parseNumber(url.searchParams.get('lon'));
   const radius = parseNumber(url.searchParams.get('radius'));
-  const preferAdsbLol = url.searchParams.get('prefer') === 'adsb.lol';
   const detailed = url.searchParams.get('detail') === '1';
 
   if (
@@ -241,63 +258,28 @@ export async function onRequestGet(context) {
     return jsonResponse({ error: 'RATE_LIMITED' }, 429, { 'retry-after': '60' });
   }
 
-  const stats = await readStats(context.env, utcDay(), url.origin);
-  const dailyLimit = getDailyLimit();
-  const [adsbConfigured, airplanesConfigured] = await Promise.all([
-    providerEnabled(context.env, 'adsb.lol', url.origin),
-    providerEnabled(context.env, 'airplanes.live', url.origin),
-  ]);
-  const [adsbCooling, airplanesCooling] = await Promise.all([
-    providerCoolingDown('adsb.lol', url.origin),
-    providerCoolingDown('airplanes.live', url.origin),
-  ]);
-  const adsbEnabled = adsbConfigured && !adsbCooling;
-  const airplanesEnabled = airplanesConfigured && !airplanesCooling;
-  const adsbUrl = `${ADSB_LOL_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
-  const airplanesUrl = `${AIRPLANES_LIVE_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
+  // Read stats here so admin/cache state remains warm. Provider safety budgets are
+  // enforced centrally by recordProviderRequest after every external call.
+  await readStats(context.env, utcDay(), url.origin);
 
   let result = null;
   let retryAfter = null;
+  let attempted = 0;
 
-  if (preferAdsbLol) {
-    if (adsbEnabled) {
-      const primary = await fetchProviderWithRetry('adsb.lol', adsbUrl, context, url.origin);
-      retryAfter = primary.retryAfter;
-      if (primary.ok) result = primary;
-    }
-    if (!result && airplanesEnabled && stats.airplanesLiveRequests < dailyLimit) {
-      await recordFallbackActivation(context.env, url.origin);
-      const fallback = await fetchProviderWithRetry(
-        'airplanes.live',
-        airplanesUrl,
-        context,
-        url.origin
-      );
-      retryAfter = fallback.retryAfter || retryAfter;
-      if (fallback.ok) result = fallback;
-    } else if (!result && airplanesEnabled && stats.airplanesLiveRequests >= dailyLimit) {
-      await recordQuotaBlocked(context.env, url.origin);
-    }
-  } else {
-    if (airplanesEnabled && stats.airplanesLiveRequests < dailyLimit) {
-      const primary = await fetchProviderWithRetry(
-        'airplanes.live',
-        airplanesUrl,
-        context,
-        url.origin
-      );
-      retryAfter = primary.retryAfter;
-      if (primary.ok) result = primary;
-      else if (adsbEnabled) await recordFallbackActivation(context.env, url.origin);
-    } else if (airplanesEnabled && stats.airplanesLiveRequests >= dailyLimit) {
-      await recordQuotaBlocked(context.env, url.origin);
-      if (adsbEnabled) await recordFallbackActivation(context.env, url.origin);
-    }
+  for (const provider of PROVIDER_ORDER) {
+    const enabled = await providerEnabled(context.env, provider, url.origin);
+    const cooling = await providerCoolingDown(provider, url.origin);
+    if (!enabled || cooling) continue;
 
-    if (!result && adsbEnabled) {
-      const fallback = await fetchProviderWithRetry('adsb.lol', adsbUrl, context, url.origin);
-      retryAfter = fallback.retryAfter || retryAfter;
-      if (fallback.ok) result = fallback;
+    if (attempted > 0) await recordFallbackActivation(context.env, url.origin);
+    attempted += 1;
+
+    const upstreamUrl = PROVIDERS[provider].point(normalizedLat, normalizedLon, normalizedRadius);
+    const candidate = await fetchProviderWithRetry(provider, upstreamUrl, context, url.origin);
+    retryAfter = candidate.retryAfter || retryAfter;
+    if (candidate.ok) {
+      result = candidate;
+      break;
     }
   }
 
@@ -309,7 +291,6 @@ export async function onRequestGet(context) {
 
     const headers = {};
     if (retryAfter) headers['retry-after'] = retryAfter;
-    if (adsbCooling || airplanesCooling) headers['x-skytrace-provider-cooldown'] = '1';
     return jsonResponse({ error: 'DATA_TEMPORARILY_UNAVAILABLE' }, 502, headers);
   }
 
