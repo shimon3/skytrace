@@ -4,10 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>SkyTrace — Suivi des vols en direct</title>
-    <link rel="manifest" href="manifest.json?v=20260818-02" />
+    <link rel="manifest" href="manifest.json?v=20260908-05" />
     <meta name="theme-color" content="#0d1119" />
-    <link rel="icon" href="icons/icon-192.png?v=20260818-02" type="image/png" />
-    <link rel="apple-touch-icon" href="icons/icon-512.png?v=20260818-02" />
+    <link rel="icon" href="icons/icon-192.png?v=20260908-05" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/icon-512.png?v=20260908-05" />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -19,11 +19,11 @@
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin="anonymous"
     ></script>
-    <link rel="stylesheet" href="style.css?v=20260818-02" />
-    <link rel="stylesheet" href="mobile.css?v=20260818-02" />
-    <link rel="stylesheet" href="flight-status.css?v=20260818-02" />
-    <link rel="stylesheet" href="panel-wide-layout.css?v=20260818-02" />
-    <link rel="stylesheet" href="search-ui.css?v=20260908-01" />
+    <link rel="stylesheet" href="style.css?v=20260908-05" />
+    <link rel="stylesheet" href="mobile.css?v=20260908-05" />
+    <link rel="stylesheet" href="flight-status.css?v=20260908-05" />
+    <link rel="stylesheet" href="panel-wide-layout.css?v=20260908-05" />
+    <link rel="stylesheet" href="search-ui.css?v=20260908-05" />
   </head>
   <body>
     <div id="map"></div>
@@ -93,14 +93,14 @@
       <div class="legend-item"><span class="legend-swatch" style="background: #f5b942"></span><span data-i18n="legend_mid">Moyenne altitude</span></div>
       <div class="legend-item"><span class="legend-swatch" style="background: #ff4d6d"></span><span data-i18n="legend_low">Décollage/atterrissage</span></div>
     </div>
-    <div id="attribution-note">Données: adsb.lol / airplanes.live · Photos: planespotters.net · Les positions entre deux mises à jour sont estimées</div>
+    <div id="attribution-note">Données live : <a href="https://adsb.fi/" target="_blank" rel="noopener noreferrer">adsb.fi</a> / adsb.lol · Photos : planespotters.net · Les positions entre deux mises à jour sont estimées</div>
     <div id="lang-switcher">
       <button class="lang-btn" data-lang="fr">Français</button><button class="lang-btn" data-lang="en">English</button><button class="lang-btn" data-lang="he">עברית</button>
     </div>
-    <script type="module" src="app.js?v=20260818-02"></script>
-    <script type="module" src="js/flight-status-integration.js?v=20260818-02"></script>
-    <script type="module" src="js/search-ui.js?v=20260908-01"></script>
-    <script type="module" src="js/airport-autocomplete.js?v=20260908-02"></script>
-    <script type="module" src="js/search-flight-marker.js?v=20260908-03"></script>
+    <script type="module" src="app.js?v=20260908-05"></script>
+    <script type="module" src="js/flight-status-integration.js?v=20260908-05"></script>
+    <script type="module" src="js/search-ui.js?v=20260908-05"></script>
+    <script type="module" src="js/airport-autocomplete.js?v=20260908-05"></script>
+    <script type="module" src="js/search-flight-marker.js?v=20260908-05"></script>
   </body>
 </html>
