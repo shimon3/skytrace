@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { onRequestGet } from '../functions/api/admin-stats.js';
 import { writeProviderControl } from '../functions/lib/provider-controls.js';
-import { getDailyLimit, recordProviderRequest } from '../functions/lib/stats.js';
+import { recordProviderRequest } from '../functions/lib/stats.js';
 import { FakeKV, installFakeCaches, makeContext } from './helpers/cf-runtime.js';
 
 const ORIGIN = 'https://skytrace.test';
@@ -36,7 +36,7 @@ test('rejects an incorrect admin token', async (t) => {
   assert.equal(response.status, 401);
 });
 
-test('reports airlabs as not-configured when no API key is set, others as unknown', async (t) => {
+test('reports unconfigured optional providers and unknown unused providers', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   const env = { ADMIN_STATS_TOKEN: TOKEN };
@@ -45,12 +45,14 @@ test('reports airlabs as not-configured when no API key is set, others as unknow
   const payload = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(payload.providers.length, 4);
+  assert.equal(payload.providers.length, 5);
   assert.equal(providerById(payload, 'airlabs').health, 'not-configured');
+  assert.equal(providerById(payload, 'airplanes.live').health, 'not-configured');
+  assert.equal(providerById(payload, 'adsb.fi').health, 'unknown');
   assert.equal(providerById(payload, 'adsb.lol').health, 'unknown');
 });
 
-test('reflects recorded traffic in the provider health and totals', async (t) => {
+test('reflects recorded traffic and automatic pauses in provider health', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   const env = { ADMIN_STATS_TOKEN: TOKEN, AIRLABS_API_KEY: 'secret' };
@@ -64,7 +66,8 @@ test('reflects recorded traffic in the provider health and totals', async (t) =>
   assert.equal(payload.requests, 3);
   assert.equal(providerById(payload, 'adsb.lol').health, 'operational');
   assert.equal(providerById(payload, 'planespotters.net').health, 'unavailable');
-  assert.equal(providerById(payload, 'airlabs').health, 'limited');
+  assert.equal(providerById(payload, 'airlabs').health, 'paused');
+  assert.equal(providerById(payload, 'airlabs').pauseReason, 'HTTP_429');
 });
 
 test('a paused provider is reported as paused regardless of its last status', async (t) => {
@@ -80,19 +83,19 @@ test('a paused provider is reported as paused regardless of its last status', as
   assert.equal(providerById(payload, 'adsb.lol').enabled, false);
 });
 
-test('computes remaining quota and percentage used against the daily limit', async (t) => {
+test('computes primary ADSB.fi remaining budget and percentage used', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   const env = { ADMIN_STATS_TOKEN: TOKEN };
-  const limit = getDailyLimit();
   for (let i = 0; i < 5; i += 1) {
-    await recordProviderRequest(env, 200, ORIGIN, 'airplanes.live');
+    await recordProviderRequest(env, 200, ORIGIN, 'adsb.fi');
   }
 
   const context = makeContext({ request: statsRequest(), env });
   const payload = await (await onRequestGet(context)).json();
-  assert.equal(payload.remaining, limit - 5);
-  assert.ok(payload.percentUsed > 0);
+  assert.equal(payload.dailyLimit, 1000);
+  assert.equal(payload.remaining, 995);
+  assert.equal(payload.percentUsed, 0.5);
 });
 
 test('reports storage as KV when a KV binding is present, cache-fallback otherwise', async (t) => {
