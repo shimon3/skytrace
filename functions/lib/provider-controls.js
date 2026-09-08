@@ -27,6 +27,14 @@ function normalizeControl(provider, stored) {
   };
 }
 
+function providerAccessAvailable(env, provider) {
+  // Since August 2026 Airplanes.live's free API is restricted to approved feeder IPs.
+  // Keep it disabled on generic Cloudflare egress unless the deployment owner explicitly
+  // confirms feeder/developer access with AIRPLANES_LIVE_ACCESS=1.
+  if (provider === 'airplanes.live') return String(env?.AIRPLANES_LIVE_ACCESS || '') === '1';
+  return true;
+}
+
 export function isKnownProvider(provider) {
   return PROVIDERS.includes(provider);
 }
@@ -44,7 +52,11 @@ export async function readProviderControl(env, provider, origin) {
   if (stored && !normalized.pausedUntil && stored.pausedUntil) {
     await writeProviderControl(env, provider, { enabled: true, pausedUntil: null }, origin);
   }
-  return normalized;
+  return {
+    ...normalized,
+    enabled: normalized.enabled && providerAccessAvailable(env, provider),
+    accessConfigured: providerAccessAvailable(env, provider),
+  };
 }
 
 export async function readAllProviderControls(env, origin) {
@@ -74,7 +86,7 @@ export async function writeProviderControl(env, provider, value, origin) {
       })
     );
   }
-  return normalizeControl(provider, control);
+  return readProviderControl(env, provider, origin);
 }
 
 export async function providerEnabled(env, provider, origin) {
