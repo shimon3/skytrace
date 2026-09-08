@@ -1,11 +1,10 @@
 const CONTROL_TTL_SECONDS = 7 * 24 * 60 * 60;
-const PROVIDERS = ['adsb.fi', 'adsb.one', 'adsb.lol', 'airplanes.live', 'airlabs', 'planespotters.net'];
+const PROVIDERS = ['adsb.fi', 'adsb.lol', 'airplanes.live', 'airlabs', 'planespotters.net'];
 
 // These are SkyTrace safety budgets, not claims about the providers' official quotas.
 // They can all be overridden in Cloudflare Pages environment variables.
 const DEFAULT_DAILY_BUDGETS = {
   'adsb.fi': 1000,
-  'adsb.one': 1000,
   'adsb.lol': 500,
   'airplanes.live': 500,
   airlabs: 100,
@@ -14,7 +13,6 @@ const DEFAULT_DAILY_BUDGETS = {
 
 const BUDGET_ENV_KEYS = {
   'adsb.fi': 'ADSB_FI_DAILY_BUDGET',
-  'adsb.one': 'ADSB_ONE_DAILY_BUDGET',
   'adsb.lol': 'ADSB_LOL_DAILY_BUDGET',
   'airplanes.live': 'AIRPLANES_LIVE_DAILY_BUDGET',
   airlabs: 'AIRLABS_DAILY_BUDGET',
