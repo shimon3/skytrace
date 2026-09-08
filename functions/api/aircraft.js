@@ -195,7 +195,14 @@ async function getActiveProviders(context, origin) {
   return { active, diagnostics };
 }
 
-async function firstPass(providers, normalizedLat, normalizedLon, normalizedRadius, context, origin) {
+async function firstPass(
+  providers,
+  normalizedLat,
+  normalizedLon,
+  normalizedRadius,
+  context,
+  origin
+) {
   const attempts = [];
   for (let index = 0; index < providers.length; index += 1) {
     const provider = providers[index];
@@ -208,7 +215,14 @@ async function firstPass(providers, normalizedLat, normalizedLon, normalizedRadi
   return { result: null, attempts };
 }
 
-async function retryFailedProviders(attempts, normalizedLat, normalizedLon, normalizedRadius, context, origin) {
+async function retryFailedProviders(
+  attempts,
+  normalizedLat,
+  normalizedLon,
+  normalizedRadius,
+  context,
+  origin
+) {
   for (const attempt of attempts) {
     if (attempt.ok || attempt.cooledDown || !RETRYABLE_STATUSES.has(attempt.status)) continue;
     if (await providerCoolingDown(attempt.provider, origin)) continue;
