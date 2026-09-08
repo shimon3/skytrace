@@ -36,9 +36,10 @@ const PROVIDERS = {
 const PROVIDER_ORDER = ['adsb.fi', 'adsb.lol', 'airplanes.live'];
 const BROAD_CACHE_TTL_SECONDS = 300;
 const DETAIL_CACHE_TTL_SECONDS = 120;
+const EMPTY_CACHE_TTL_SECONDS = 15;
 const STALE_TTL_SECONDS = 1800;
 const KV_STALE_TTL_SECONDS = 3600;
-const UPSTREAM_TIMEOUT_MS = 2800;
+const UPSTREAM_TIMEOUT_MS = 5000;
 const COORDINATE_BUCKET_DEGREES = 1;
 const RATE_LIMIT_PER_MINUTE = 60;
 const RETRYABLE_STATUSES = new Set([502, 503, 504, 598, 599]);
@@ -253,15 +254,18 @@ async function firstPass(
   origin
 ) {
   const attempts = [];
+  let emptyCandidate = null;
   for (let index = 0; index < providers.length; index += 1) {
     const provider = providers[index];
     if (index > 0) await recordFallbackActivation(context.env, origin);
     const upstreamUrl = PROVIDERS[provider].point(normalizedLat, normalizedLon, normalizedRadius);
     const candidate = await fetchProvider(provider, upstreamUrl, context, origin);
     attempts.push(candidate);
-    if (candidate.ok) return { result: candidate, attempts };
+    if (!candidate.ok) continue;
+    if (candidate.payload.ac.length > 0) return { result: candidate, attempts };
+    if (!emptyCandidate) emptyCandidate = candidate;
   }
-  return { result: null, attempts };
+  return { result: emptyCandidate, attempts };
 }
 
 async function retryFailedProviders(
@@ -318,7 +322,7 @@ export async function onRequestGet(context) {
   const normalizedLon = bucketCoordinate(lon).toFixed(2);
   const normalizedRadius = Math.round(radius);
   const freshness = detailed ? 'detail' : 'broad';
-  const cacheTtlSeconds = detailed ? DETAIL_CACHE_TTL_SECONDS : BROAD_CACHE_TTL_SECONDS;
+  const baseCacheTtlSeconds = detailed ? DETAIL_CACHE_TTL_SECONDS : BROAD_CACHE_TTL_SECONDS;
   const kvKey = kvAircraftKey(normalizedLat, normalizedLon, normalizedRadius, freshness);
 
   const cacheKeyUrl = new URL(url.origin + '/api/aircraft');
@@ -376,8 +380,8 @@ export async function onRequestGet(context) {
   );
 
   let result = liveAttempt.result;
-  if (!result && liveAttempt.attempts.length) {
-    result = await retryFailedProviders(
+  if ((!result || result.payload.ac.length === 0) && liveAttempt.attempts.length) {
+    const retryResult = await retryFailedProviders(
       liveAttempt.attempts,
       normalizedLat,
       normalizedLon,
@@ -385,6 +389,7 @@ export async function onRequestGet(context) {
       context,
       url.origin
     );
+    if (retryResult) result = retryResult;
   }
 
   if (!result) {
@@ -421,6 +426,8 @@ export async function onRequestGet(context) {
   }
 
   const body = JSON.stringify(result.payload);
+  const hasAircraft = result.payload.ac.length > 0;
+  const cacheTtlSeconds = hasAircraft ? baseCacheTtlSeconds : EMPTY_CACHE_TTL_SECONDS;
   const freshResponse = new Response(body, {
     status: 200,
     headers: {
@@ -429,28 +436,27 @@ export async function onRequestGet(context) {
       'x-skytrace-provider': result.provider,
     },
   });
-  const stalePayloadResponse = new Response(body, {
-    status: 200,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': `public, max-age=${STALE_TTL_SECONDS}`,
-      'x-skytrace-provider': result.provider,
-    },
-  });
 
-  context.waitUntil(
-    Promise.all([
-      cache.put(cacheKey, freshResponse),
-      cache.put(staleKey, stalePayloadResponse),
-      writeKvStale(context.env, kvKey, body, result.provider),
-    ])
-  );
+  const writes = [cache.put(cacheKey, freshResponse)];
+  if (hasAircraft) {
+    const stalePayloadResponse = new Response(body, {
+      status: 200,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': `public, max-age=${STALE_TTL_SECONDS}`,
+        'x-skytrace-provider': result.provider,
+      },
+    });
+    writes.push(cache.put(staleKey, stalePayloadResponse));
+    writes.push(writeKvStale(context.env, kvKey, body, result.provider));
+  }
+  context.waitUntil(Promise.all(writes));
 
   return new Response(body, {
     status: 200,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'public, max-age=20, stale-while-revalidate=120',
+      'cache-control': `public, max-age=${hasAircraft ? 20 : 5}, stale-while-revalidate=120`,
       'x-skytrace-cache': 'MISS',
       'x-skytrace-provider': result.provider,
     },
