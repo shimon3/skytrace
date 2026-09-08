@@ -36,6 +36,16 @@ function healthLabel(value) {
   );
 }
 
+function pauseReasonLabel(reason) {
+  return (
+    {
+      HTTP_429: 'Pause automatique : HTTP 429 / limitation fournisseur',
+      SAFETY_BUDGET: 'Pause automatique : seuil de sécurité atteint',
+      MANUAL: 'Pause manuelle',
+    }[reason] || null
+  );
+}
+
 function tomorrowMidnightIso() {
   const date = new Date();
   date.setDate(date.getDate() + 1);
@@ -87,11 +97,16 @@ function renderProviders(providers = []) {
   for (const provider of providers) {
     const card = document.createElement('article');
     card.className = 'provider';
+    const reason = pauseReasonLabel(provider.pauseReason);
     const pauseText = provider.pausedUntil
-      ? `Reprise automatique : ${formatDate(provider.pausedUntil)}`
+      ? `${reason ? `${reason}. ` : ''}Reprise automatique : ${formatDate(provider.pausedUntil)}`
       : provider.enabled
         ? 'Service actif'
-        : 'Suspendu jusqu’à réactivation manuelle';
+        : reason || 'Suspendu jusqu’à réactivation manuelle';
+    const usage = Number(provider.percentUsed || 0);
+    const autoPauseAt = Number(provider.autoPausePercent || 80);
+    const progressValue = Math.min(100, Math.max(0, usage));
+
     card.innerHTML = `
       <div class="provider-head">
         <strong>${provider.label}</strong>
@@ -101,9 +116,13 @@ function renderProviders(providers = []) {
         <dt>Requêtes aujourd’hui</dt><dd>${provider.requests}</dd>
         <dt>Succès</dt><dd>${provider.successes}</dd>
         <dt>Échecs</dt><dd>${provider.failures}</dd>
+        <dt>Utilisation budget SkyTrace</dt><dd>${usage.toFixed(1)} %</dd>
+        <dt>Budget journalier interne</dt><dd>${provider.dailyBudget}</dd>
+        <dt>Pause automatique à</dt><dd>${autoPauseAt} %</dd>
         <dt>Dernier HTTP</dt><dd>${provider.lastStatus ?? '—'}</dd>
         <dt>Dernier appel</dt><dd>${formatDate(provider.lastRequestAt)}</dd>
       </dl>
+      <progress max="100" value="${progressValue}" title="${usage.toFixed(1)} %"></progress>
       <p class="provider-control-state">${pauseText}</p>
       <div class="provider-actions">
         <button type="button" class="provider-test secondary">Tester maintenant</button>
@@ -169,11 +188,11 @@ async function loadStats() {
     setText('quota-blocked', payload.quotaBlocked);
 
     const progress = document.getElementById('quota-progress');
-    progress.max = payload.dailyLimit || 500;
-    progress.value = payload.airplanesLiveRequests || 0;
+    progress.max = payload.dailyLimit || 1000;
+    progress.value = payload.adsbFiRequests || 0;
 
     document.getElementById('quota-text').textContent =
-      `${payload.percentUsed || 0} % du quota journalier principal consommé.`;
+      `${payload.primaryProvider || 'adsb.fi'} : ${payload.percentUsed || 0} % du budget SkyTrace journalier consommé · pause auto à ${payload.autoPausePercent || 80} %.`;
     document.getElementById('details').textContent =
       `Jour UTC : ${payload.day} · Bascules de secours : ${payload.fallbackActivations || 0} · Dernier service : ${payload.lastProvider || '—'} · Dernier statut : ${payload.lastStatus ?? '—'} · Stockage : ${payload.storage}`;
     document.getElementById('updated-at').textContent =
