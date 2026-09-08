@@ -1,4 +1,4 @@
-const SW_VERSION = '20260908-03';
+const SW_VERSION = '20260908-04';
 const CACHE_NAME = `skytrace-static-${SW_VERSION}`;
 const APP_SHELL_REQUEST = new Request('/');
 
@@ -8,8 +8,11 @@ const PRECACHE_URLS = [
   `/mobile.css?v=${SW_VERSION}`,
   `/flight-status.css?v=${SW_VERSION}`,
   `/panel-wide-layout.css?v=${SW_VERSION}`,
+  `/search-ui.css?v=${SW_VERSION}`,
   `/app.js?v=${SW_VERSION}`,
   `/js/flight-status-integration.js?v=${SW_VERSION}`,
+  `/js/search-ui.js?v=${SW_VERSION}`,
+  `/js/airport-autocomplete.js?v=${SW_VERSION}`,
   '/js/api-client.js',
   '/js/flight-utils.js',
   '/js/i18n.js',
