@@ -4,8 +4,9 @@ const AIRCRAFT_API = '/api/aircraft';
 const PHOTO_API = '/api/photo';
 const RADIUS_NM = 250;
 const GRID_STEP_LAT = 5.2;
-const MAX_CONCURRENCY = 2;
+const MAX_CONCURRENCY = 4;
 const DEFAULT_TILE_CACHE_MS = 300000;
+const CLIENT_TILE_TIMEOUT_MS = 4500;
 
 function getErrorMessage(payload, fallback) {
   if (!payload || typeof payload !== 'object') return fallback;
@@ -47,6 +48,13 @@ function closestLatitudeToEquator(south, north) {
   return Math.abs(south) < Math.abs(north) ? south : north;
 }
 
+function pointDistanceSquared(a, b) {
+  const dLat = a.lat - b.lat;
+  const cosLat = Math.max(0.2, Math.cos((b.lat * Math.PI) / 180));
+  const dLon = (a.lon - b.lon) * cosLat;
+  return dLat * dLat + dLon * dLon;
+}
+
 export function viewportPoints(map, fallbackPoint) {
   if (!map?.getBounds) return [fallbackPoint];
 
@@ -75,15 +83,26 @@ export function viewportPoints(map, fallbackPoint) {
     }
   }
 
-  if (!points.length) return [fallbackPoint];
+  const center = {
+    lat: Number(clamp(fallbackPoint.lat, -85, 85).toFixed(2)),
+    lon: Number(wrapLongitude(fallbackPoint.lon).toFixed(2)),
+  };
+  const deduped = new Map([[`${center.lat}:${center.lon}`, center]]);
+  for (const point of points) deduped.set(`${point.lat}:${point.lon}`, point);
+  const ordered = [...deduped.values()].sort(
+    (a, b) => pointDistanceSquared(a, center) - pointDistanceSquared(b, center)
+  );
 
   const limit = lowZoomLimit(zoom);
-  if (points.length <= limit) return points;
+  if (ordered.length <= limit) return ordered;
 
-  const selected = [];
-  const stride = points.length / limit;
-  for (let index = 0; index < limit; index += 1) {
-    selected.push(points[Math.min(points.length - 1, Math.floor(index * stride + stride / 2))]);
+  // Always keep the center first, then sample the remaining viewport evenly.
+  const selected = [ordered[0]];
+  const rest = ordered.slice(1);
+  const wanted = limit - 1;
+  const stride = rest.length / wanted;
+  for (let index = 0; index < wanted; index += 1) {
+    selected.push(rest[Math.min(rest.length - 1, Math.floor(index * stride))]);
   }
   return selected;
 }
@@ -100,6 +119,7 @@ export class AircraftApiClient {
   #backoffUntil = 0;
   #tileCache = new Map();
   #inFlight = new Map();
+  #viewportGeneration = 0;
 
   get lastSuccessfulUpdate() {
     return this.#lastSuccessfulUpdate;
@@ -146,10 +166,18 @@ export class AircraftApiClient {
       });
       if (detailed) params.set('detail', '1');
 
-      const response = await fetch(`${AIRCRAFT_API}?${params}`, {
-        headers: { accept: 'application/json' },
-        cache: 'no-store',
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), CLIENT_TILE_TIMEOUT_MS);
+      let response;
+      try {
+        response = await fetch(`${AIRCRAFT_API}?${params}`, {
+          headers: { accept: 'application/json' },
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
       let payload = null;
       try {
@@ -190,6 +218,7 @@ export class AircraftApiClient {
   }
 
   async fetchPoint(point, _radiusNm, { onPartial } = {}) {
+    const generation = ++this.#viewportGeneration;
     const map = window.__skytraceMap;
     const zoom = map?.getZoom?.() ?? 6;
     const points = viewportPoints(map, point);
@@ -201,6 +230,7 @@ export class AircraftApiClient {
     this.#lastCoverageComplete = false;
 
     const merge = (aircraftList) => {
+      if (generation !== this.#viewportGeneration) return;
       for (const aircraft of aircraftList) {
         const existing = deduplicated.get(aircraft.id);
         if (!existing || aircraft.lastSeen >= existing.lastSeen)
@@ -209,28 +239,53 @@ export class AircraftApiClient {
       if (typeof onPartial === 'function') onPartial([...deduplicated.values()]);
     };
 
-    let cursor = 0;
-    const worker = async () => {
-      while (cursor < points.length) {
-        if (Date.now() < this.#backoffUntil) break;
-        const tilePoint = points[cursor];
-        cursor += 1;
-        try {
-          const aircraft = await this.#fetchTile(tilePoint, cacheDurationMs, detailed);
-          completedTiles += 1;
-          merge(aircraft);
-        } catch (error) {
-          console.error('Viewport aircraft tile failed:', error);
+    // Fetch the viewport center first. This makes the first aircraft appear as soon as
+    // one request finishes instead of waiting for every tile covering the screen.
+    const centerPoint = points[0] || point;
+    try {
+      const centerAircraft = await this.#fetchTile(centerPoint, cacheDurationMs, detailed);
+      if (generation !== this.#viewportGeneration) return [];
+      completedTiles += 1;
+      merge(centerAircraft);
+    } catch (error) {
+      console.error('Viewport center tile failed:', error);
+    }
+
+    const remaining = points.slice(1);
+
+    // Fill the rest of the viewport in the background. A newer viewport generation
+    // automatically makes these workers stop, so rapid panning does not keep loading
+    // old countries while the user is already looking elsewhere.
+    const fillViewport = async () => {
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < remaining.length && generation === this.#viewportGeneration) {
           if (Date.now() < this.#backoffUntil) break;
+          const tilePoint = remaining[cursor];
+          cursor += 1;
+          try {
+            const aircraft = await this.#fetchTile(tilePoint, cacheDurationMs, detailed);
+            if (generation !== this.#viewportGeneration) break;
+            completedTiles += 1;
+            merge(aircraft);
+          } catch (error) {
+            console.error('Viewport aircraft tile failed:', error);
+            if (Date.now() < this.#backoffUntil) break;
+          }
         }
+      };
+
+      const workers = Math.min(MAX_CONCURRENCY, remaining.length);
+      await Promise.all(Array.from({ length: workers }, () => worker()));
+      if (generation === this.#viewportGeneration) {
+        this.#lastCoverageComplete = completedTiles === points.length;
       }
     };
 
-    const workers = Math.min(MAX_CONCURRENCY, points.length);
-    await Promise.all(Array.from({ length: workers }, () => worker()));
+    if (remaining.length) void fillViewport();
+    else this.#lastCoverageComplete = completedTiles === points.length;
 
     if (completedTiles === 0) throw new Error('VIEWPORT_DATA_UNAVAILABLE');
-    this.#lastCoverageComplete = completedTiles === points.length;
     return [...deduplicated.values()];
   }
 }

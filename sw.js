@@ -1,4 +1,4 @@
-const SW_VERSION = '20260818-02';
+const SW_VERSION = '20260908-03';
 const CACHE_NAME = `skytrace-static-${SW_VERSION}`;
 const APP_SHELL_REQUEST = new Request('/');
 
