@@ -8,6 +8,8 @@ const MAX_CONCURRENCY = 1;
 const MIN_NETWORK_SPACING_MS = 1100;
 const DEFAULT_TILE_CACHE_MS = 300000;
 const EMPTY_TILE_CACHE_MS = 5000;
+const PERSISTED_TILE_MAX_AGE_MS = 600000;
+const PERSISTED_TILE_PREFIX = 'skytrace_aircraft_tile_v1:';
 // The backend can legitimately need time to skip a paused provider and try a fallback.
 // Keep this comfortably above the backend's per-provider timeout.
 const CLIENT_TILE_TIMEOUT_MS = 30000;
@@ -30,6 +32,36 @@ function wrapLongitude(value) {
   while (lon > 180) lon -= 360;
   while (lon < -180) lon += 360;
   return lon;
+}
+
+function readPersistedTile(key) {
+  try {
+    const raw = sessionStorage.getItem(`${PERSISTED_TILE_PREFIX}${key}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed ||
+      !Number.isFinite(parsed.at) ||
+      !Array.isArray(parsed.aircraft) ||
+      parsed.aircraft.length === 0 ||
+      Date.now() - parsed.at > PERSISTED_TILE_MAX_AGE_MS
+    ) {
+      sessionStorage.removeItem(`${PERSISTED_TILE_PREFIX}${key}`);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedTile(key, entry) {
+  if (!entry?.aircraft?.length) return;
+  try {
+    sessionStorage.setItem(`${PERSISTED_TILE_PREFIX}${key}`, JSON.stringify(entry));
+  } catch {
+    // Storage is only a refresh-resilience optimization. Ignore quota/privacy failures.
+  }
 }
 
 function lowZoomLimit(zoom) {
@@ -157,7 +189,11 @@ export class AircraftApiClient {
   async #fetchTile(point, cacheDurationMs, detailed) {
     const key = this.#tileKey(point);
     const now = Date.now();
-    const cached = this.#tileCache.get(key);
+    let cached = this.#tileCache.get(key);
+    if (!cached) {
+      cached = readPersistedTile(key);
+      if (cached) this.#tileCache.set(key, cached);
+    }
     const effectiveCacheMs = cached?.aircraft?.length ? cacheDurationMs : EMPTY_TILE_CACHE_MS;
 
     if (cached && now - cached.at < effectiveCacheMs) return cached.aircraft;
@@ -194,6 +230,7 @@ export class AircraftApiClient {
           if (cached) return cached.aircraft;
           throw new Error('AIRCRAFT_API_TIMEOUT');
         }
+        if (cached) return cached.aircraft;
         throw error;
       } finally {
         clearTimeout(timeout);
@@ -228,7 +265,18 @@ export class AircraftApiClient {
         .filter((item) => item && item.hex && item.lat != null && item.lon != null)
         .map((item) => normalizeAircraft(item, receivedAt));
 
-      this.#tileCache.set(key, { at: receivedAt, aircraft });
+      // A transient empty 200 response must not erase a recently successful viewport.
+      if (
+        aircraft.length === 0 &&
+        cached?.aircraft?.length &&
+        receivedAt - cached.at <= PERSISTED_TILE_MAX_AGE_MS
+      ) {
+        return cached.aircraft;
+      }
+
+      const entry = { at: receivedAt, aircraft };
+      this.#tileCache.set(key, entry);
+      if (aircraft.length > 0) writePersistedTile(key, entry);
       this.#lastSuccessfulUpdate = receivedAt;
       return aircraft;
     })().finally(() => this.#inFlight.delete(key));
