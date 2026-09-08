@@ -1,5 +1,10 @@
-import { readAllProviderControls } from '../lib/provider-controls.js';
-import { getDailyLimit, readStats, utcDay } from '../lib/stats.js';
+import {
+  getAutoPausePercent,
+  getProviderDailyBudget,
+  providerUsagePercent,
+  readAllProviderControls,
+} from '../lib/provider-controls.js';
+import { readStats, utcDay } from '../lib/stats.js';
 
 function jsonResponse(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -54,8 +59,7 @@ export async function onRequestGet(context) {
   const stats = await readStats(context.env, day, url.origin);
   const controls = await readAllProviderControls(context.env, url.origin);
   const controlMap = Object.fromEntries(controls.map((item) => [item.provider, item]));
-  const dailyLimit = getDailyLimit();
-  const primaryRequests = stats.airplanesLiveRequests || 0;
+  const autoPausePercent = getAutoPausePercent(context.env);
 
   const historyDays = previousUtcDays(7);
   const history = await Promise.all(
@@ -72,15 +76,27 @@ export async function onRequestGet(context) {
   );
 
   const providerDefinitions = [
+    { id: 'adsb.fi', label: 'ADSB.fi', configured: true },
     { id: 'adsb.lol', label: 'adsb.lol', configured: true },
-    { id: 'airplanes.live', label: 'Airplanes.live', configured: true },
+    {
+      id: 'airplanes.live',
+      label: 'Airplanes.live',
+      configured: String(context.env?.AIRPLANES_LIVE_ACCESS || '') === '1',
+    },
     { id: 'airlabs', label: 'AirLabs', configured: Boolean(context.env?.AIRLABS_API_KEY) },
     { id: 'planespotters.net', label: 'Planespotters.net', configured: true },
   ];
 
   const providers = providerDefinitions.map((definition) => {
     const provider = stats.providers?.[definition.id] || {};
-    const control = controlMap[definition.id] || { enabled: true, pausedUntil: null };
+    const control = controlMap[definition.id] || {
+      enabled: true,
+      pausedUntil: null,
+      pauseReason: null,
+    };
+    const dailyBudget = getProviderDailyBudget(context.env, definition.id);
+    const percentUsed = providerUsagePercent(provider.requests || 0, dailyBudget);
+
     return {
       ...definition,
       requests: provider.requests || 0,
@@ -90,7 +106,12 @@ export async function onRequestGet(context) {
       lastRequestAt: provider.lastRequestAt || null,
       enabled: control.enabled,
       pausedUntil: control.pausedUntil,
+      pauseReason: control.pauseReason || null,
       health: providerHealth(provider, definition.configured, control.enabled),
+      dailyBudget,
+      remainingBudget: Math.max(0, dailyBudget - (provider.requests || 0)),
+      percentUsed,
+      autoPausePercent,
     };
   });
 
@@ -105,14 +126,20 @@ export async function onRequestGet(context) {
     };
   });
 
+  const primary = providers.find((provider) => provider.id === 'adsb.fi');
+  const primaryBudget = primary?.dailyBudget || 1000;
+  const primaryRequests = primary?.requests || 0;
+
   return jsonResponse({
     ...stats,
     providers,
     hourly,
     history,
-    dailyLimit,
-    remaining: Math.max(0, dailyLimit - primaryRequests),
-    percentUsed: dailyLimit > 0 ? Math.round((primaryRequests / dailyLimit) * 1000) / 10 : 0,
+    dailyLimit: primaryBudget,
+    remaining: Math.max(0, primaryBudget - primaryRequests),
+    percentUsed: primary?.percentUsed || 0,
+    autoPausePercent,
+    primaryProvider: 'adsb.fi',
     storage: context.env?.SKYTRACE_STATS ? 'KV' : 'cache-fallback',
   });
 }
