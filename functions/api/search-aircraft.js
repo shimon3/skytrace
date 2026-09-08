@@ -15,6 +15,14 @@ const PROVIDERS = {
       return `callsign/${encodeURIComponent(query)}`;
     },
   },
+  'adsb.one': {
+    base: 'https://api.adsb.one/v2',
+    path(kind, query) {
+      if (kind === 'hex') return `icao/${encodeURIComponent(query)}`;
+      if (kind === 'reg') return `reg/${encodeURIComponent(query)}`;
+      return `callsign/${encodeURIComponent(query)}`;
+    },
+  },
   'adsb.lol': {
     base: 'https://api.adsb.lol/v2',
     path(kind, query) {
@@ -29,10 +37,10 @@ const PROVIDERS = {
   },
 };
 
-const PROVIDER_ORDER = ['adsb.fi', 'adsb.lol', 'airplanes.live'];
+const PROVIDER_ORDER = ['adsb.fi', 'adsb.one', 'adsb.lol', 'airplanes.live'];
 const CACHE_SECONDS = 30;
 const NEGATIVE_CACHE_SECONDS = 15;
-const TIMEOUT_MS = 5500;
+const TIMEOUT_MS = 5000;
 
 function json(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
