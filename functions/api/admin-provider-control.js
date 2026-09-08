@@ -6,7 +6,7 @@ import {
 } from '../lib/provider-controls.js';
 import { recordProviderRequest } from '../lib/stats.js';
 
-const POSITION_PROVIDERS = new Set(['adsb.fi', 'adsb.lol', 'airplanes.live']);
+const POSITION_PROVIDERS = new Set(['adsb.fi', 'adsb.one', 'adsb.lol', 'airplanes.live']);
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -40,6 +40,13 @@ async function testProvider(context, provider, origin) {
   let response;
   if (provider === 'adsb.fi') {
     response = await fetch('https://opendata.adsb.fi/api/v3/lat/31.5/lon/34.8/dist/25', {
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'SkyTrace/1.0 (+https://skytrace-83z.pages.dev)',
+      },
+    });
+  } else if (provider === 'adsb.one') {
+    response = await fetch('https://api.adsb.one/v2/point/31.5/34.8/25', {
       headers: {
         accept: 'application/json',
         'user-agent': 'SkyTrace/1.0 (+https://skytrace-83z.pages.dev)',
