@@ -8,7 +8,7 @@ const RADIUS_NM = 250;
 const TICK_MS = 180000;
 const STALE_MS = 600000;
 const MOVE_DEBOUNCE_MS = 180;
-const INITIAL_RETRY_DELAYS_MS = [1000, 2500, 5000, 10000];
+const INITIAL_RETRY_DELAYS_MS = [1000, 2500, 5000, 10000, 20000, 30000];
 const FOLLOW_PAN_INTERVAL_MS = 1000;
 const TRAILS_STORAGE_KEY = 'skytrace_trails_v2';
 
@@ -129,10 +129,18 @@ function mergeAircraft(received, { replace = false } = {}) {
   if (selectedId && aircraftById.has(selectedId)) updatePanel(aircraftById.get(selectedId));
   checkSharedPlane();
 }
+function resetInitialRetry() {
+  initialRetryIndex = 0;
+  clearTimeout(initialRetryTimer);
+  initialRetryTimer = null;
+}
 function scheduleInitialRetry(force = false) {
   if ((!force && aircraftById.size > 0) || document.hidden || initialRetryTimer) return;
-  if (initialRetryIndex >= INITIAL_RETRY_DELAYS_MS.length) return;
-  const delay = INITIAL_RETRY_DELAYS_MS[initialRetryIndex++];
+  const slot = Math.min(initialRetryIndex, INITIAL_RETRY_DELAYS_MS.length - 1);
+  const baseDelay = INITIAL_RETRY_DELAYS_MS[slot];
+  initialRetryIndex += 1;
+  const providerBackoffDelay = Math.max(0, (api.nextRequestAt || 0) - Date.now() + 250);
+  const delay = Math.max(baseDelay, providerBackoffDelay);
   initialRetryTimer = setTimeout(() => {
     initialRetryTimer = null;
     fetchTick();
@@ -150,20 +158,21 @@ async function fetchTick() {
   updateZoneLabel();
   try {
     const received = await api.fetchPoint(point, RADIUS_NM, {
-      onPartial: (partial) => mergeAircraft(partial),
+      onPartial: (partial) => {
+        mergeAircraft(partial);
+        if (partial?.length > 0) resetInitialRetry();
+      },
     });
     if (received != null) mergeAircraft(received, { replace: api.lastCoverageComplete });
-    if (received?.length > 0) {
-      initialRetryIndex = 0;
-      clearTimeout(initialRetryTimer);
-      initialRetryTimer = null;
+    if (received?.length > 0 || aircraftById.size > 0) {
+      resetInitialRetry();
     } else {
       scheduleInitialRetry(true);
     }
     return true;
   } catch (error) {
     console.error('Aircraft data refresh failed:', error);
-    scheduleInitialRetry(true);
+    if (aircraftById.size === 0) scheduleInitialRetry(true);
     return false;
   } finally {
     fetchInProgress = false;
@@ -305,7 +314,10 @@ map.on('moveend', () => {
   if (!followEnabled) scheduleViewportRefresh();
 });
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) scheduleViewportRefresh();
+  if (!document.hidden) {
+    if (aircraftById.size === 0) initialRetryIndex = 0;
+    scheduleViewportRefresh();
+  }
 });
 document.getElementById('panel-close').addEventListener('click', closePanel);
 
