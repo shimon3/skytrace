@@ -21,6 +21,11 @@ const PROVIDERS = {
       return `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${radius}`;
     },
   },
+  'adsb.one': {
+    point(lat, lon, radius) {
+      return `https://api.adsb.one/v2/point/${lat}/${lon}/${radius}`;
+    },
+  },
   'adsb.lol': {
     point(lat, lon, radius) {
       return `https://api.adsb.lol/v2/point/${lat}/${lon}/${radius}`;
@@ -33,16 +38,16 @@ const PROVIDERS = {
   },
 };
 
-const PROVIDER_ORDER = ['adsb.fi', 'adsb.lol', 'airplanes.live'];
+const PROVIDER_ORDER = ['adsb.fi', 'adsb.one', 'adsb.lol', 'airplanes.live'];
 const BROAD_CACHE_TTL_SECONDS = 300;
 const DETAIL_CACHE_TTL_SECONDS = 120;
 const STALE_TTL_SECONDS = 1800;
-const UPSTREAM_TIMEOUT_MS = 6500;
+const UPSTREAM_TIMEOUT_MS = 5000;
 const COORDINATE_BUCKET_DEGREES = 1;
 const RATE_LIMIT_PER_MINUTE = 60;
 const RETRYABLE_STATUSES = new Set([502, 503, 504, 598, 599]);
-const RETRY_BACKOFF_MS = 500;
-const RETRY_BACKOFF_MAX_MS = 3500;
+const RETRY_BACKOFF_MS = 350;
+const RETRY_BACKOFF_MAX_MS = 1800;
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -190,6 +195,7 @@ function staleResponse(stale, cacheState = 'STALE') {
       'content-type': stale.headers.get('content-type') || 'application/json; charset=utf-8',
       'cache-control': 'public, max-age=20, stale-while-revalidate=120',
       'x-skytrace-cache': cacheState,
+      'x-skytrace-provider': stale.headers.get('x-skytrace-provider') || 'cache',
       warning: '110 - "Response is stale"',
     },
   });
@@ -258,8 +264,6 @@ export async function onRequestGet(context) {
     return jsonResponse({ error: 'RATE_LIMITED' }, 429, { 'retry-after': '60' });
   }
 
-  // Read stats here so admin/cache state remains warm. Provider safety budgets are
-  // enforced centrally by recordProviderRequest after every external call.
   await readStats(context.env, utcDay(), url.origin);
 
   let result = null;
