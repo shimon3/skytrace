@@ -1,15 +1,3 @@
-const PROVIDERS = [
-  {
-    name: 'adsb.fi',
-    url: (lat, lon, radius) =>
-      `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${radius}`,
-  },
-  {
-    name: 'adsb.lol',
-    url: (lat, lon, radius) => `https://api.adsb.lol/v2/point/${lat}/${lon}/${radius}`,
-  },
-];
-
 function json(data, status = 200) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
@@ -20,22 +8,62 @@ function json(data, status = 200) {
   });
 }
 
-async function testProvider(provider, lat, lon, radius) {
+function bboxForRadius(lat, lon, radiusNm) {
+  const latDelta = radiusNm / 60;
+  const cos = Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+  const lonDelta = radiusNm / (60 * cos);
+  return [lat - latDelta, lon - lonDelta, lat + latDelta, lon + lonDelta]
+    .map((value, index) => {
+      const min = index % 2 === 0 ? -85 : -180;
+      const max = index % 2 === 0 ? 85 : 180;
+      return Math.max(min, Math.min(max, value)).toFixed(3);
+    })
+    .join(',');
+}
+
+function providerDefinitions(env, lat, lon, radius) {
+  const airLabsKey = String(env?.AIRLABS_API_KEY || '').trim();
+  const providers = [];
+  if (airLabsKey) {
+    const params = new URLSearchParams({
+      bbox: bboxForRadius(lat, lon, radius),
+      _fields: 'hex,lat,lng,updated',
+      api_key: airLabsKey,
+    });
+    providers.push({
+      name: 'airlabs',
+      url: `https://airlabs.co/api/v9/flights?${params}`,
+      payloadArray: 'response',
+    });
+  }
+  providers.push(
+    {
+      name: 'adsb.fi',
+      url: `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${radius}`,
+      payloadArray: 'ac',
+    },
+    {
+      name: 'adsb.lol',
+      url: `https://api.adsb.lol/v2/point/${lat}/${lon}/${radius}`,
+      payloadArray: 'ac',
+    }
+  );
+  return { providers, airLabsConfigured: Boolean(airLabsKey) };
+}
+
+async function testProvider(provider) {
   const startedAt = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(provider.url(lat, lon, radius), {
-      headers: { accept: 'application/json', 'user-agent': 'SkyTrace-Diagnostics/1.0' },
+    const response = await fetch(provider.url, {
+      headers: { accept: 'application/json', 'user-agent': 'SkyTrace-Diagnostics/2.0' },
       signal: controller.signal,
     });
-    let payload = null;
-    try {
-      payload = await response.json();
-    } catch {
-      payload = null;
-    }
-    const aircraft = Array.isArray(payload?.ac) ? payload.ac : [];
+    const payload = await response.json().catch(() => null);
+    const aircraft = Array.isArray(payload?.[provider.payloadArray])
+      ? payload[provider.payloadArray]
+      : [];
     return {
       provider: provider.name,
       ok: response.ok,
@@ -43,7 +71,7 @@ async function testProvider(provider, lat, lon, radius) {
       elapsedMs: Date.now() - startedAt,
       aircraft: aircraft.length,
       retryAfter: response.headers.get('retry-after'),
-      payloadValid: Array.isArray(payload?.ac),
+      payloadValid: Array.isArray(payload?.[provider.payloadArray]),
     };
   } catch (error) {
     return {
@@ -69,8 +97,19 @@ export async function onRequestGet(context) {
   }
 
   const startedAt = Date.now();
+  const definition = providerDefinitions(context.env, lat, lon, radius);
   const providers = [];
-  for (const provider of PROVIDERS) providers.push(await testProvider(provider, lat, lon, radius));
+  if (!definition.airLabsConfigured) {
+    providers.push({
+      provider: 'airlabs',
+      ok: false,
+      status: null,
+      aircraft: 0,
+      payloadValid: false,
+      reason: 'AIRLABS_API_KEY_NOT_CONFIGURED',
+    });
+  }
+  for (const provider of definition.providers) providers.push(await testProvider(provider));
 
   let skytrace = null;
   try {
@@ -88,6 +127,7 @@ export async function onRequestGet(context) {
       provider: response.headers.get('x-skytrace-provider'),
       payloadValid: Array.isArray(payload?.ac),
       error: response.ok ? null : payload?.error || payload?.message || null,
+      providers: response.ok ? undefined : payload?.providers || undefined,
     };
   } catch (error) {
     skytrace = { ok: false, error: String(error?.message || error) };
@@ -97,6 +137,7 @@ export async function onRequestGet(context) {
     generatedAt: new Date().toISOString(),
     location: { lat, lon, radiusNm: radius },
     elapsedMs: Date.now() - startedAt,
+    airLabsConfigured: definition.airLabsConfigured,
     providers,
     skytrace,
   });
