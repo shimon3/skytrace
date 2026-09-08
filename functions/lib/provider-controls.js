@@ -52,6 +52,7 @@ function normalizeControl(provider, stored) {
 
 function providerAccessAvailable(env, provider) {
   if (provider === 'airplanes.live') return String(env?.AIRPLANES_LIVE_ACCESS || '') === '1';
+  if (provider === 'airlabs') return Boolean(String(env?.AIRLABS_API_KEY || '').trim());
   return true;
 }
 
@@ -108,10 +109,11 @@ export async function readProviderControl(env, provider, origin) {
     );
   }
 
+  const accessConfigured = providerAccessAvailable(env, provider);
   return {
     ...normalized,
-    enabled: normalized.enabled && providerAccessAvailable(env, provider),
-    accessConfigured: providerAccessAvailable(env, provider),
+    enabled: normalized.enabled && accessConfigured,
+    accessConfigured,
   };
 }
 
