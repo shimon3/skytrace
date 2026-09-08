@@ -12,11 +12,13 @@ import { FakeKV, installFakeCaches } from './helpers/cf-runtime.js';
 
 const ORIGIN = 'https://skytrace.test';
 
-test('isKnownProvider recognizes only the four supported providers', () => {
+test('isKnownProvider recognizes the supported providers', () => {
+  assert.equal(isKnownProvider('adsb.fi'), true);
   assert.equal(isKnownProvider('adsb.lol'), true);
   assert.equal(isKnownProvider('airplanes.live'), true);
   assert.equal(isKnownProvider('airlabs'), true);
   assert.equal(isKnownProvider('planespotters.net'), true);
+  assert.equal(isKnownProvider('adsb.one'), false);
   assert.equal(isKnownProvider('unknown-provider'), false);
 });
 
@@ -34,6 +36,13 @@ test('a provider defaults to enabled when nothing has been stored', async () => 
   assert.equal(control.enabled, true);
   assert.equal(control.pausedUntil, null);
   assert.equal(await providerEnabled(env, 'adsb.lol', ORIGIN), true);
+});
+
+test('airplanes.live remains disabled until access is explicitly configured', async () => {
+  const env = { SKYTRACE_STATS: new FakeKV() };
+  const control = await readProviderControl(env, 'airplanes.live', ORIGIN);
+  assert.equal(control.enabled, false);
+  assert.equal(control.accessConfigured, false);
 });
 
 test('pausing a provider with a future resume date disables it', async () => {
@@ -55,8 +64,6 @@ test('a pause automatically lapses and self-heals storage once pausedUntil is in
   assert.equal(control.enabled, true);
   assert.equal(control.pausedUntil, null);
 
-  // The lapsed pause should have been rewritten to storage, not just
-  // masked in the returned value.
   const rawStored = JSON.parse(await env.SKYTRACE_STATS.get('provider-control:airlabs'));
   assert.equal(rawStored.enabled, true);
   assert.equal(rawStored.pausedUntil, null);
@@ -84,8 +91,9 @@ test('re-enabling a paused provider clears pausedUntil', async () => {
 test('readAllProviderControls returns one entry per known provider', async () => {
   const env = { SKYTRACE_STATS: new FakeKV() };
   const controls = await readAllProviderControls(env, ORIGIN);
-  assert.equal(controls.length, 4);
+  assert.equal(controls.length, 5);
   assert.deepEqual(controls.map((c) => c.provider).sort(), [
+    'adsb.fi',
     'adsb.lol',
     'airlabs',
     'airplanes.live',
