@@ -4,9 +4,14 @@ const AIRCRAFT_API = '/api/aircraft';
 const PHOTO_API = '/api/photo';
 const RADIUS_NM = 250;
 const GRID_STEP_LAT = 5.2;
-const MAX_CONCURRENCY = 2;
+const MAX_CONCURRENCY = 1;
+const MIN_NETWORK_SPACING_MS = 1100;
 const DEFAULT_TILE_CACHE_MS = 300000;
 const CLIENT_TILE_TIMEOUT_MS = 4500;
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function getErrorMessage(payload, fallback) {
   if (!payload || typeof payload !== 'object') return fallback;
@@ -118,6 +123,7 @@ export class AircraftApiClient {
   #tileCache = new Map();
   #inFlight = new Map();
   #viewportGeneration = 0;
+  #lastNetworkRequestAt = 0;
 
   get lastSuccessfulUpdate() {
     return this.#lastSuccessfulUpdate;
@@ -137,6 +143,12 @@ export class AircraftApiClient {
 
   #tileKey(point) {
     return `${point.lat.toFixed(2)}:${point.lon.toFixed(2)}:${RADIUS_NM}`;
+  }
+
+  async #paceNetwork() {
+    const delay = Math.max(0, this.#lastNetworkRequestAt + MIN_NETWORK_SPACING_MS - Date.now());
+    if (delay) await wait(delay);
+    this.#lastNetworkRequestAt = Date.now();
   }
 
   async #fetchTile(point, cacheDurationMs, detailed) {
@@ -160,10 +172,10 @@ export class AircraftApiClient {
         lat: String(point.lat),
         lon: String(point.lon),
         radius: String(RADIUS_NM),
-        prefer: 'adsb.lol',
       });
       if (detailed) params.set('detail', '1');
 
+      await this.#paceNetwork();
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), CLIENT_TILE_TIMEOUT_MS);
       let response;
