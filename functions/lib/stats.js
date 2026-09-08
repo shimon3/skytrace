@@ -1,5 +1,13 @@
+import {
+  autoPauseProvider,
+  getAutoPausePercent,
+  getProviderDailyBudget,
+  providerUsagePercent,
+} from './provider-controls.js';
+
 const DAILY_LIMIT = 500;
 const FALLBACK_TTL_SECONDS = 172800;
+const HTTP_429_PAUSE_SECONDS = 30 * 60;
 
 export function utcDay(date = new Date()) {
   return date.toISOString().slice(0, 10);
@@ -19,6 +27,7 @@ export function emptyStats(day = utcDay()) {
     quotaBlocked: 0,
     airplanesLiveRequests: 0,
     adsbLolRequests: 0,
+    adsbFiRequests: 0,
     fallbackActivations: 0,
     retries: 0,
     retrySuccesses: 0,
@@ -141,6 +150,7 @@ export async function recordProviderRequest(env, status, origin, provider = 'unk
 
   if (provider === 'airplanes.live') stats.airplanesLiveRequests += 1;
   if (provider === 'adsb.lol') stats.adsbLolRequests += 1;
+  if (provider === 'adsb.fi') stats.adsbFiRequests += 1;
 
   if (status >= 200 && status < 300) stats.successes += 1;
   else stats.failures += 1;
@@ -170,6 +180,28 @@ export async function recordProviderRequest(env, status, origin, provider = 'unk
   stats.lastRequestAt = now.toISOString();
   stats.lastStatus = status;
   await writeStats(env, stats, origin);
+
+  // HTTP 429 means the provider explicitly asked us to slow down. Pause it
+  // automatically instead of continuing to send requests from other visitors/tiles.
+  if (status === 429) {
+    await autoPauseProvider(env, provider, origin, 'HTTP_429', {
+      seconds: HTTP_429_PAUSE_SECONDS,
+    });
+    return stats;
+  }
+
+  // Each provider has an internal SkyTrace daily safety budget. Once the configured
+  // percentage is reached (80% by default, configurable to 85% for example), pause
+  // that provider until the next UTC day.
+  if (provider !== 'unknown') {
+    const budget = getProviderDailyBudget(env, provider);
+    const percent = providerUsagePercent(providerStats.requests, budget);
+    const threshold = getAutoPausePercent(env);
+    if (percent >= threshold) {
+      await autoPauseProvider(env, provider, origin, 'SAFETY_BUDGET');
+    }
+  }
+
   return stats;
 }
 
