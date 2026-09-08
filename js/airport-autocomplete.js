@@ -35,7 +35,7 @@ function deriveCity(name) {
     .replace(/[()]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return cleaned.split(/[\-/]/)[0]?.trim() || '';
+  return cleaned.split(/[-/]/)[0]?.trim() || '';
 }
 
 function dedupeCatalog(items) {
