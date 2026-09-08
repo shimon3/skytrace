@@ -7,7 +7,9 @@ const GRID_STEP_LAT = 5.2;
 const MAX_CONCURRENCY = 1;
 const MIN_NETWORK_SPACING_MS = 1100;
 const DEFAULT_TILE_CACHE_MS = 300000;
-const CLIENT_TILE_TIMEOUT_MS = 4500;
+// The backend can legitimately need time to skip a paused provider and try a fallback.
+// Keep this above the backend's per-provider timeout so the browser does not abort first.
+const CLIENT_TILE_TIMEOUT_MS = 16000;
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -185,6 +187,14 @@ export class AircraftApiClient {
           cache: 'no-store',
           signal: controller.signal,
         });
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          // A timeout is temporary. Do not blank the map if an older tile exists.
+          if (cached) return cached.aircraft;
+          this.#backoffUntil = Date.now() + 15000;
+          throw new Error('AIRCRAFT_API_TIMEOUT');
+        }
+        throw error;
       } finally {
         clearTimeout(timeout);
       }
