@@ -37,6 +37,7 @@ const PROVIDER_ORDER = ['adsb.fi', 'adsb.lol', 'airplanes.live'];
 const BROAD_CACHE_TTL_SECONDS = 300;
 const DETAIL_CACHE_TTL_SECONDS = 120;
 const STALE_TTL_SECONDS = 1800;
+const KV_STALE_TTL_SECONDS = 3600;
 const UPSTREAM_TIMEOUT_MS = 2800;
 const COORDINATE_BUCKET_DEGREES = 1;
 const RATE_LIMIT_PER_MINUTE = 60;
@@ -78,6 +79,48 @@ function bucketCoordinate(value) {
 
 function validAircraftPayload(payload) {
   return payload && typeof payload === 'object' && Array.isArray(payload.ac);
+}
+
+function kvAircraftKey(lat, lon, radius, freshness) {
+  return `aircraft-stale:${freshness}:${lat}:${lon}:${radius}`;
+}
+
+async function readKvStale(env, key) {
+  if (!env?.SKYTRACE_STATS?.get) return null;
+  try {
+    const stored = await env.SKYTRACE_STATS.get(key, { type: 'json' });
+    if (!stored || typeof stored !== 'object' || typeof stored.body !== 'string') return null;
+    return stored;
+  } catch (error) {
+    console.error('aircraft: KV stale read failed:', error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+async function writeKvStale(env, key, body, provider) {
+  if (!env?.SKYTRACE_STATS?.put) return;
+  try {
+    await env.SKYTRACE_STATS.put(
+      key,
+      JSON.stringify({ body, provider, savedAt: new Date().toISOString() }),
+      { expirationTtl: KV_STALE_TTL_SECONDS }
+    );
+  } catch (error) {
+    console.error('aircraft: KV stale write failed:', error instanceof Error ? error.message : error);
+  }
+}
+
+function kvStaleResponse(stored, cacheState = 'KV-STALE') {
+  return new Response(stored.body, {
+    status: 200,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'public, max-age=20, stale-while-revalidate=120',
+      'x-skytrace-cache': cacheState,
+      'x-skytrace-provider': stored.provider || 'kv-cache',
+      warning: '110 - "Response is stale"',
+    },
+  });
 }
 
 async function consumeRateLimit(request, origin) {
@@ -268,13 +311,15 @@ export async function onRequestGet(context) {
   const normalizedLat = bucketCoordinate(lat).toFixed(2);
   const normalizedLon = bucketCoordinate(lon).toFixed(2);
   const normalizedRadius = Math.round(radius);
+  const freshness = detailed ? 'detail' : 'broad';
   const cacheTtlSeconds = detailed ? DETAIL_CACHE_TTL_SECONDS : BROAD_CACHE_TTL_SECONDS;
+  const kvKey = kvAircraftKey(normalizedLat, normalizedLon, normalizedRadius, freshness);
 
   const cacheKeyUrl = new URL(url.origin + '/api/aircraft');
   cacheKeyUrl.searchParams.set('lat', normalizedLat);
   cacheKeyUrl.searchParams.set('lon', normalizedLon);
   cacheKeyUrl.searchParams.set('radius', String(normalizedRadius));
-  cacheKeyUrl.searchParams.set('freshness', detailed ? 'detail' : 'broad');
+  cacheKeyUrl.searchParams.set('freshness', freshness);
 
   const staleKeyUrl = new URL(cacheKeyUrl);
   staleKeyUrl.pathname = '/api/aircraft-stale';
@@ -298,11 +343,16 @@ export async function onRequestGet(context) {
   }
 
   const stale = await cache.match(staleKey);
+  const kvStale = stale ? null : await readKvStale(context.env, kvKey);
 
   if (!(await consumeRateLimit(context.request, url.origin))) {
     if (stale) {
       context.waitUntil(recordCacheHit(context.env, url.origin));
       return staleResponse(stale, 'STALE-RATE-LIMIT');
+    }
+    if (kvStale) {
+      context.waitUntil(recordCacheHit(context.env, url.origin));
+      return kvStaleResponse(kvStale, 'KV-STALE-RATE-LIMIT');
     }
     return jsonResponse({ error: 'RATE_LIMITED' }, 429, { 'retry-after': '60' });
   }
@@ -335,6 +385,10 @@ export async function onRequestGet(context) {
     if (stale) {
       context.waitUntil(recordCacheHit(context.env, url.origin));
       return staleResponse(stale);
+    }
+    if (kvStale) {
+      context.waitUntil(recordCacheHit(context.env, url.origin));
+      return kvStaleResponse(kvStale);
     }
 
     const retryAfter = liveAttempt.attempts.map((item) => item.retryAfter).find(Boolean);
@@ -379,7 +433,11 @@ export async function onRequestGet(context) {
   });
 
   context.waitUntil(
-    Promise.all([cache.put(cacheKey, freshResponse), cache.put(staleKey, stalePayloadResponse)])
+    Promise.all([
+      cache.put(cacheKey, freshResponse),
+      cache.put(staleKey, stalePayloadResponse),
+      writeKvStale(context.env, kvKey, body, result.provider),
+    ])
   );
 
   return new Response(body, {
