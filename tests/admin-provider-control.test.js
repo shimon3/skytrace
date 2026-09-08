@@ -122,14 +122,14 @@ test('refuses to pause the last remaining active position provider', async (t) =
   const resumeAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
   const first = makeContext({
-    request: controlRequest({ provider: 'adsb.lol', action: 'pause', resumeAt }),
+    request: controlRequest({ provider: 'adsb.fi', action: 'pause', resumeAt }),
     env,
   });
   const firstResponse = await onRequestPost(first);
   assert.equal(firstResponse.status, 200);
 
   const second = makeContext({
-    request: controlRequest({ provider: 'airplanes.live', action: 'pause', resumeAt }),
+    request: controlRequest({ provider: 'adsb.lol', action: 'pause', resumeAt }),
     env,
   });
   const secondResponse = await onRequestPost(second);
@@ -193,6 +193,6 @@ test('testing airlabs without a configured API key reports NOT_CONFIGURED and sk
   });
   const response = await onRequestPost(context);
   const payload = await response.json();
-  assert.equal(response.status, 502);
+  assert.equal(response.status, 200);
   assert.equal(payload.code, 'NOT_CONFIGURED');
 });
