@@ -6,7 +6,7 @@ import {
 } from '../lib/provider-controls.js';
 import { recordProviderRequest } from '../lib/stats.js';
 
-const POSITION_PROVIDERS = new Set(['adsb.lol', 'airplanes.live']);
+const POSITION_PROVIDERS = new Set(['adsb.fi', 'adsb.lol', 'airplanes.live']);
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -38,11 +38,21 @@ function authorized(context) {
 
 async function testProvider(context, provider, origin) {
   let response;
-  if (provider === 'adsb.lol') {
+  if (provider === 'adsb.fi') {
+    response = await fetch('https://opendata.adsb.fi/api/v3/lat/31.5/lon/34.8/dist/25', {
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'SkyTrace/1.0 (+https://skytrace-83z.pages.dev)',
+      },
+    });
+  } else if (provider === 'adsb.lol') {
     response = await fetch('https://api.adsb.lol/v2/point/31.5/34.8/25', {
       headers: { accept: 'application/json' },
     });
   } else if (provider === 'airplanes.live') {
+    if (String(context.env?.AIRPLANES_LIVE_ACCESS || '') !== '1') {
+      return { ok: false, status: 503, code: 'NOT_CONFIGURED' };
+    }
     response = await fetch('https://api.airplanes.live/v2/point/31.5/34.8/25', {
       headers: {
         accept: 'application/json',
@@ -87,7 +97,7 @@ export async function onRequestPost(context) {
     const control = await writeProviderControl(
       context.env,
       provider,
-      { enabled: true, pausedUntil: null },
+      { enabled: true, pausedUntil: null, pauseReason: null },
       origin
     );
     return json({ provider, control });
@@ -117,7 +127,11 @@ export async function onRequestPost(context) {
   const control = await writeProviderControl(
     context.env,
     provider,
-    { enabled: false, pausedUntil: pausedUntil ? pausedUntil.toISOString() : null },
+    {
+      enabled: false,
+      pausedUntil: pausedUntil ? pausedUntil.toISOString() : null,
+      pauseReason: 'MANUAL',
+    },
     origin
   );
   return json({ provider, control });
