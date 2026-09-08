@@ -18,25 +18,25 @@ function fakeMap({ south, north, west, east, zoom }) {
   };
 }
 
-test('country-level view keeps all generated coverage tiles', () => {
+test('country-level view keeps multiple generated coverage tiles', () => {
   const points = viewportPoints(fakeMap({ south: 27, north: 35, west: 29, east: 39, zoom: 6 }), {
     lat: 31.5,
     lon: 34.8,
   });
 
   assert.ok(points.length >= 4);
-  assert.ok(points.length <= 12);
+  assert.ok(points.length <= 6);
   assert.ok(points.some((point) => point.lat < 31));
   assert.ok(points.some((point) => point.lat > 31));
 });
 
-test('world view is capped without collapsing to the center', () => {
+test('world view is capped aggressively while retaining geographic spread', () => {
   const points = viewportPoints(
     fakeMap({ south: -70, north: 70, west: -170, east: 170, zoom: 2 }),
     { lat: 0, lon: 0 }
   );
 
-  assert.equal(points.length, 8);
+  assert.equal(points.length, 3);
   const latitudeSpread =
     Math.max(...points.map((point) => point.lat)) - Math.min(...points.map((point) => point.lat));
   const longitudeSpread =
