@@ -21,11 +21,6 @@ const PROVIDERS = {
       return `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${radius}`;
     },
   },
-  'adsb.one': {
-    point(lat, lon, radius) {
-      return `https://api.adsb.one/v2/point/${lat}/${lon}/${radius}`;
-    },
-  },
   'adsb.lol': {
     point(lat, lon, radius) {
       return `https://api.adsb.lol/v2/point/${lat}/${lon}/${radius}`;
@@ -38,7 +33,7 @@ const PROVIDERS = {
   },
 };
 
-const PROVIDER_ORDER = ['adsb.fi', 'adsb.one', 'adsb.lol', 'airplanes.live'];
+const PROVIDER_ORDER = ['adsb.fi', 'adsb.lol', 'airplanes.live'];
 const BROAD_CACHE_TTL_SECONDS = 300;
 const DETAIL_CACHE_TTL_SECONDS = 120;
 const STALE_TTL_SECONDS = 1800;
@@ -114,7 +109,7 @@ async function consumeRateLimit(request, origin) {
 
 async function fetchProvider(provider, upstreamUrl, context, origin) {
   if (await providerCoolingDown(provider, origin)) {
-    return { ok: false, status: 503, provider, cooledDown: true };
+    return { ok: false, status: 503, provider, cooledDown: true, reason: 'COOLDOWN' };
   }
 
   const controller = new AbortController();
@@ -154,14 +149,16 @@ async function fetchProvider(provider, upstreamUrl, context, origin) {
         status: response.status,
         retryAfter: response.headers.get('retry-after'),
         provider,
+        reason: !response.ok ? 'UPSTREAM_HTTP' : 'INVALID_PAYLOAD',
       };
     }
 
     return { ok: true, status: response.status, payload, provider };
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'AbortError';
-    context.waitUntil(recordUpstreamRequest(context.env, timedOut ? 598 : 599, origin, provider));
-    return { ok: false, status: timedOut ? 598 : 599, provider };
+    const status = timedOut ? 598 : 599;
+    context.waitUntil(recordUpstreamRequest(context.env, status, origin, provider));
+    return { ok: false, status, provider, reason: timedOut ? 'TIMEOUT' : 'NETWORK_ERROR' };
   } finally {
     clearTimeout(timeout);
   }
@@ -269,11 +266,20 @@ export async function onRequestGet(context) {
   let result = null;
   let retryAfter = null;
   let attempted = 0;
+  const providerDiagnostics = [];
 
   for (const provider of PROVIDER_ORDER) {
     const enabled = await providerEnabled(context.env, provider, url.origin);
+    if (!enabled) {
+      providerDiagnostics.push({ provider, attempted: false, reason: 'DISABLED_OR_PAUSED' });
+      continue;
+    }
+
     const cooling = await providerCoolingDown(provider, url.origin);
-    if (!enabled || cooling) continue;
+    if (cooling) {
+      providerDiagnostics.push({ provider, attempted: false, reason: 'COOLDOWN' });
+      continue;
+    }
 
     if (attempted > 0) await recordFallbackActivation(context.env, url.origin);
     attempted += 1;
@@ -281,6 +287,13 @@ export async function onRequestGet(context) {
     const upstreamUrl = PROVIDERS[provider].point(normalizedLat, normalizedLon, normalizedRadius);
     const candidate = await fetchProviderWithRetry(provider, upstreamUrl, context, url.origin);
     retryAfter = candidate.retryAfter || retryAfter;
+    providerDiagnostics.push({
+      provider,
+      attempted: true,
+      status: candidate.status,
+      ok: candidate.ok,
+      reason: candidate.reason || null,
+    });
     if (candidate.ok) {
       result = candidate;
       break;
@@ -295,7 +308,15 @@ export async function onRequestGet(context) {
 
     const headers = {};
     if (retryAfter) headers['retry-after'] = retryAfter;
-    return jsonResponse({ error: 'DATA_TEMPORARILY_UNAVAILABLE' }, 502, headers);
+    return jsonResponse(
+      {
+        error: 'DATA_TEMPORARILY_UNAVAILABLE',
+        message: 'Aucun fournisseur de positions live n’est disponible pour le moment.',
+        providers: providerDiagnostics,
+      },
+      502,
+      headers
+    );
   }
 
   const body = JSON.stringify(result.payload);
