@@ -7,9 +7,10 @@ const GRID_STEP_LAT = 5.2;
 const MAX_CONCURRENCY = 1;
 const MIN_NETWORK_SPACING_MS = 1100;
 const DEFAULT_TILE_CACHE_MS = 300000;
+const EMPTY_TILE_CACHE_MS = 5000;
 // The backend can legitimately need time to skip a paused provider and try a fallback.
-// Keep this above the backend's per-provider timeout so the browser does not abort first.
-const CLIENT_TILE_TIMEOUT_MS = 16000;
+// Keep this comfortably above the backend's per-provider timeout.
+const CLIENT_TILE_TIMEOUT_MS = 30000;
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -157,8 +158,9 @@ export class AircraftApiClient {
     const key = this.#tileKey(point);
     const now = Date.now();
     const cached = this.#tileCache.get(key);
+    const effectiveCacheMs = cached?.aircraft?.length ? cacheDurationMs : EMPTY_TILE_CACHE_MS;
 
-    if (cached && now - cached.at < cacheDurationMs) return cached.aircraft;
+    if (cached && now - cached.at < effectiveCacheMs) return cached.aircraft;
     if (document.hidden) {
       if (cached) return cached.aircraft;
       throw new Error('PAGE_HIDDEN');
@@ -210,8 +212,6 @@ export class AircraftApiClient {
           const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60;
           this.#backoffUntil = Date.now() + seconds * 1000;
         }
-        // 502/503 is usually a provider/zone failure. Do not globally freeze the whole
-        // viewport: another tile can still return aircraft through a working fallback.
         if (cached) return cached.aircraft;
         throw new Error(
           `HTTP ${response.status}: ${getErrorMessage(payload, 'AIRCRAFT_API_ERROR')}`
@@ -297,9 +297,6 @@ export class AircraftApiClient {
       }
     };
 
-    // Keep the viewport generation alive until its initial coverage pass has finished.
-    // Previously this ran detached in the background; move/visibility refreshes could then
-    // start a new generation and cancel the pass before any non-central tile succeeded.
     if (remaining.length) await fillViewport();
     else this.#lastCoverageComplete = completedTiles === points.length;
 
