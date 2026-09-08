@@ -18,7 +18,7 @@ const aircraftWorker = await readFile(
 const apiClient = await readFile(new URL('../js/api-client.js', import.meta.url), 'utf8');
 
 const forbiddenSecretPatterns = [
-  /AIRLABS_API_KEY\s*=\s*['"][^'"]+['"]/,
+  /AIRLABS_API_KEY\s*=\s*['"][^'"]+['"]/, 
   /api_key=[A-Za-z0-9_-]{12,}/,
 ];
 const optionalVersion = '(?:\\?v=[A-Za-z0-9._-]+)?';
@@ -55,11 +55,14 @@ test('queries AirLabs only through the same-origin Cloudflare endpoint', () => {
 
 test('keeps aircraft providers behind the same-origin proxy', () => {
   assert.match(apiClient, /const AIRCRAFT_API = '\/api\/aircraft'/);
+  assert.doesNotMatch(apiClient, /opendata\.adsb\.fi/);
   assert.doesNotMatch(apiClient, /api\.airplanes\.live\/v2\/point/);
   assert.doesNotMatch(apiClient, /api\.adsb\.lol\/v2\/point/);
+  assert.match(aircraftWorker, /https:\/\/opendata\.adsb\.fi\/api\/v3/);
   assert.match(aircraftWorker, /https:\/\/api\.airplanes\.live\/v2\/point/);
   assert.match(aircraftWorker, /https:\/\/api\.adsb\.lol\/v2\/point/);
-  assert.match(index, /Données: adsb\.lol \/ airplanes\.live/);
+  assert.doesNotMatch(aircraftWorker, /adsb\.one/);
+  assert.match(index, /Données live[\s\S]*adsb\.fi[\s\S]*adsb\.lol/);
 });
 
 test('caches commercial flight lookups to protect the AirLabs quota', () => {
