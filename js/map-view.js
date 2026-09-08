@@ -123,29 +123,30 @@ export function createMapView() {
   const dark = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     { maxZoom: 16, attribution: esriAttribution }
-  ).addTo(map);
+  );
 
   const satellite = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     { maxZoom: 19, attribution: esriAttribution }
   );
 
+  // The colored OpenStreetMap layer is the default basemap shown on first load.
   const colored = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: osmAttribution,
-  });
+  }).addTo(map);
 
   const labels = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
     { maxZoom: 16, attribution: esriAttribution, opacity: 0.85 }
-  ).addTo(map);
+  );
 
   let control;
   const rebuildLayers = () => {
     if (control) map.removeControl(control);
     control = L.control
       .layers(
-        { [t('map_dark')]: dark, [t('map_satellite')]: satellite, [t('map_colored')]: colored },
+        { [t('map_colored')]: colored, [t('map_dark')]: dark, [t('map_satellite')]: satellite },
         null,
         { position: 'topright', collapsed: innerWidth <= 600 }
       )
