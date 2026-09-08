@@ -1,4 +1,5 @@
 import { providerEnabled } from '../lib/provider-controls.js';
+import { cooldownSecondsForStatus, providerCoolingDown, setProviderCooldown } from '../lib/provider-cooldown.js';
 import {
   getDailyLimit,
   readStats,
@@ -17,13 +18,13 @@ const ADSB_LOL_BASE = 'https://api.adsb.lol/v2/point';
 const BROAD_CACHE_TTL_SECONDS = 300;
 const DETAIL_CACHE_TTL_SECONDS = 120;
 const STALE_TTL_SECONDS = 1800;
-const UPSTREAM_TIMEOUT_MS = 10000;
-const COORDINATE_BUCKET_DEGREES = 0.5;
+const UPSTREAM_TIMEOUT_MS = 6500;
+const COORDINATE_BUCKET_DEGREES = 1;
 const RATE_LIMIT_PER_MINUTE = 60;
 
 const RETRYABLE_STATUSES = new Set([502, 503, 504, 598, 599]);
-const RETRY_BACKOFF_MS = 700;
-const RETRY_BACKOFF_MAX_MS = 5000;
+const RETRY_BACKOFF_MS = 500;
+const RETRY_BACKOFF_MAX_MS = 3500;
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -89,6 +90,10 @@ async function consumeRateLimit(request, origin) {
 }
 
 async function fetchProvider(provider, upstreamUrl, context, origin) {
+  if (await providerCoolingDown(provider, origin)) {
+    return { ok: false, status: 503, provider, cooledDown: true };
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
 
@@ -111,6 +116,15 @@ async function fetchProvider(provider, upstreamUrl, context, origin) {
 
     context.waitUntil(recordUpstreamRequest(context.env, response.status, origin, provider));
 
+    if (response.status === 403 || response.status === 429) {
+      await setProviderCooldown(
+        provider,
+        origin,
+        cooldownSecondsForStatus(response.status, response.headers.get('retry-after')),
+        context
+      );
+    }
+
     if (!response.ok || !validAircraftPayload(payload)) {
       return {
         ok: false,
@@ -132,7 +146,14 @@ async function fetchProvider(provider, upstreamUrl, context, origin) {
 
 async function fetchProviderWithRetry(provider, upstreamUrl, context, origin) {
   const initial = await fetchProvider(provider, upstreamUrl, context, origin);
-  if (initial.ok || !RETRYABLE_STATUSES.has(initial.status)) return initial;
+  if (
+    initial.ok ||
+    initial.cooledDown ||
+    !RETRYABLE_STATUSES.has(initial.status) ||
+    (await providerCoolingDown(provider, origin))
+  ) {
+    return initial;
+  }
 
   await recordRetryAttempt(context.env, origin);
   await wait(retryDelayMs(initial.retryAfter));
@@ -149,7 +170,7 @@ function staleResponse(stale, cacheState = 'STALE') {
     status: 200,
     headers: {
       'content-type': stale.headers.get('content-type') || 'application/json; charset=utf-8',
-      'cache-control': 'private, max-age=0',
+      'cache-control': 'public, max-age=20, stale-while-revalidate=120',
       'x-skytrace-cache': cacheState,
       warning: '110 - "Response is stale"',
     },
@@ -203,8 +224,9 @@ export async function onRequestGet(context) {
       status: cached.status,
       headers: {
         'content-type': cached.headers.get('content-type') || 'application/json; charset=utf-8',
-        'cache-control': 'private, max-age=0',
+        'cache-control': 'public, max-age=20, stale-while-revalidate=120',
         'x-skytrace-cache': 'HIT',
+        'x-skytrace-provider': cached.headers.get('x-skytrace-provider') || 'cache',
       },
     });
   }
@@ -221,10 +243,16 @@ export async function onRequestGet(context) {
 
   const stats = await readStats(context.env, utcDay(), url.origin);
   const dailyLimit = getDailyLimit();
-  const [adsbEnabled, airplanesEnabled] = await Promise.all([
+  const [adsbConfigured, airplanesConfigured] = await Promise.all([
     providerEnabled(context.env, 'adsb.lol', url.origin),
     providerEnabled(context.env, 'airplanes.live', url.origin),
   ]);
+  const [adsbCooling, airplanesCooling] = await Promise.all([
+    providerCoolingDown('adsb.lol', url.origin),
+    providerCoolingDown('airplanes.live', url.origin),
+  ]);
+  const adsbEnabled = adsbConfigured && !adsbCooling;
+  const airplanesEnabled = airplanesConfigured && !airplanesCooling;
   const adsbUrl = `${ADSB_LOL_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
   const airplanesUrl = `${AIRPLANES_LIVE_BASE}/${normalizedLat}/${normalizedLon}/${normalizedRadius}`;
 
@@ -281,6 +309,7 @@ export async function onRequestGet(context) {
 
     const headers = {};
     if (retryAfter) headers['retry-after'] = retryAfter;
+    if (adsbCooling || airplanesCooling) headers['x-skytrace-provider-cooldown'] = '1';
     return jsonResponse({ error: 'DATA_TEMPORARILY_UNAVAILABLE' }, 502, headers);
   }
 
@@ -310,7 +339,7 @@ export async function onRequestGet(context) {
     status: 200,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'private, max-age=0',
+      'cache-control': 'public, max-age=20, stale-while-revalidate=120',
       'x-skytrace-cache': 'MISS',
       'x-skytrace-provider': result.provider,
     },
