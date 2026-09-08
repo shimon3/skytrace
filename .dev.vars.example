@@ -1,2 +1,16 @@
 AIRLABS_API_KEY=
 ADMIN_STATS_TOKEN=
+
+# Optional provider access
+AIRPLANES_LIVE_ACCESS=0
+
+# SkyTrace internal daily safety budgets (not provider-advertised quotas)
+ADSB_FI_DAILY_BUDGET=1000
+ADSB_LOL_DAILY_BUDGET=500
+AIRPLANES_LIVE_DAILY_BUDGET=500
+AIRLABS_DAILY_BUDGET=100
+PLANESPOTTERS_DAILY_BUDGET=500
+
+# Auto-pause a provider when this percentage of its SkyTrace budget is reached.
+# Default in code is 80. Set to 85 if you prefer more headroom usage.
+PROVIDER_AUTO_PAUSE_PERCENT=80
