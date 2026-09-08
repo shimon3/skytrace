@@ -92,7 +92,10 @@ async function readKvStale(env, key) {
     if (!stored || typeof stored !== 'object' || typeof stored.body !== 'string') return null;
     return stored;
   } catch (error) {
-    console.error('aircraft: KV stale read failed:', error instanceof Error ? error.message : error);
+    console.error(
+      'aircraft: KV stale read failed:',
+      error instanceof Error ? error.message : error
+    );
     return null;
   }
 }
@@ -106,7 +109,10 @@ async function writeKvStale(env, key, body, provider) {
       { expirationTtl: KV_STALE_TTL_SECONDS }
     );
   } catch (error) {
-    console.error('aircraft: KV stale write failed:', error instanceof Error ? error.message : error);
+    console.error(
+      'aircraft: KV stale write failed:',
+      error instanceof Error ? error.message : error
+    );
   }
 }
 
