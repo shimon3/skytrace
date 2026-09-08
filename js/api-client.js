@@ -189,9 +189,7 @@ export class AircraftApiClient {
         });
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
-          // A timeout is temporary. Do not blank the map if an older tile exists.
           if (cached) return cached.aircraft;
-          this.#backoffUntil = Date.now() + 15000;
           throw new Error('AIRCRAFT_API_TIMEOUT');
         }
         throw error;
@@ -211,9 +209,9 @@ export class AircraftApiClient {
         if (response.status === 429) {
           const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60;
           this.#backoffUntil = Date.now() + seconds * 1000;
-        } else if (response.status === 502 || response.status === 503) {
-          this.#backoffUntil = Date.now() + 30000;
         }
+        // 502/503 is usually a provider/zone failure. Do not globally freeze the whole
+        // viewport: another tile can still return aircraft through a working fallback.
         if (cached) return cached.aircraft;
         throw new Error(
           `HTTP ${response.status}: ${getErrorMessage(payload, 'AIRCRAFT_API_ERROR')}`
@@ -302,7 +300,7 @@ export class AircraftApiClient {
     if (remaining.length) void fillViewport();
     else this.#lastCoverageComplete = completedTiles === points.length;
 
-    if (completedTiles === 0) throw new Error('VIEWPORT_DATA_UNAVAILABLE');
+    if (completedTiles === 0 && !remaining.length) throw new Error('VIEWPORT_DATA_UNAVAILABLE');
     return [...deduplicated.values()];
   }
 }
