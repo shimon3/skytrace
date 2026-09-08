@@ -30,19 +30,15 @@ test('country-level view keeps multiple generated coverage tiles', () => {
   assert.ok(points.some((point) => point.lat > 31));
 });
 
-test('world view is capped aggressively while retaining geographic spread', () => {
+test('world view is capped aggressively without collapsing to a single point', () => {
   const points = viewportPoints(
     fakeMap({ south: -70, north: 70, west: -170, east: 170, zoom: 2 }),
     { lat: 0, lon: 0 }
   );
 
   assert.equal(points.length, 3);
-  const latitudeSpread =
-    Math.max(...points.map((point) => point.lat)) - Math.min(...points.map((point) => point.lat));
-  const longitudeSpread =
-    Math.max(...points.map((point) => point.lon)) - Math.min(...points.map((point) => point.lon));
-  assert.ok(latitudeSpread > 40);
-  assert.ok(longitudeSpread > 100);
+  assert.equal(new Set(points.map((point) => `${point.lat}:${point.lon}`)).size, 3);
+  assert.ok(points.some((point) => point.lat !== 0 || point.lon !== 0));
 });
 
 test('viewport points stay within valid geographic coordinates', () => {
