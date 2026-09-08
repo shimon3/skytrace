@@ -7,6 +7,7 @@ import {
 
 const DAILY_LIMIT = 500;
 const FALLBACK_TTL_SECONDS = 172800;
+const HTTP_403_PAUSE_SECONDS = 6 * 60 * 60;
 const HTTP_429_PAUSE_SECONDS = 30 * 60;
 
 export function utcDay(date = new Date()) {
@@ -181,8 +182,13 @@ export async function recordProviderRequest(env, status, origin, provider = 'unk
   stats.lastStatus = status;
   await writeStats(env, stats, origin);
 
-  // HTTP 429 means the provider explicitly asked us to slow down. Pause it
-  // automatically instead of continuing to send requests from other visitors/tiles.
+  if (status === 403) {
+    await autoPauseProvider(env, provider, origin, 'HTTP_403', {
+      seconds: HTTP_403_PAUSE_SECONDS,
+    });
+    return stats;
+  }
+
   if (status === 429) {
     await autoPauseProvider(env, provider, origin, 'HTTP_429', {
       seconds: HTTP_429_PAUSE_SECONDS,
@@ -190,9 +196,6 @@ export async function recordProviderRequest(env, status, origin, provider = 'unk
     return stats;
   }
 
-  // Each provider has an internal SkyTrace daily safety budget. Once the configured
-  // percentage is reached (80% by default, configurable to 85% for example), pause
-  // that provider until the next UTC day.
   if (provider !== 'unknown') {
     const budget = getProviderDailyBudget(env, provider);
     const percent = providerUsagePercent(providerStats.requests, budget);
