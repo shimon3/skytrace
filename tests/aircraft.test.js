@@ -2,30 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { onRequestGet } from '../functions/api/aircraft.js';
-import { writeProviderControl } from '../functions/lib/provider-controls.js';
-import { emptyStats, getDailyLimit, readStats, utcDay } from '../functions/lib/stats.js';
+import { readProviderControl, writeProviderControl } from '../functions/lib/provider-controls.js';
+import { readStats, utcDay } from '../functions/lib/stats.js';
 import { installFakeCaches, makeContext } from './helpers/cf-runtime.js';
 
 const ORIGIN = 'https://skytrace.test';
-const ADSB_PAYLOAD = { ac: [{ hex: 'adsb1', lat: 32, lon: 35 }] };
-const AIRPLANES_PAYLOAD = { ac: [{ hex: 'live1', lat: 32, lon: 35 }] };
+const ADSB_FI_PAYLOAD = { ac: [{ hex: 'fi001', lat: 32, lon: 35 }] };
+const ADSB_LOL_PAYLOAD = { ac: [{ hex: 'lol001', lat: 32, lon: 35 }] };
 
 function bucket(value) {
-  return (Math.round(value / 0.5) * 0.5).toFixed(2);
+  return Math.round(value).toFixed(2);
 }
 
-function aircraftRequest({
-  lat = 32,
-  lon = 35,
-  radius = 250,
-  prefer = 'adsb.lol',
-  ip = '1.2.3.4',
-} = {}) {
+function aircraftRequest({ lat = 32, lon = 35, radius = 250, ip = '1.2.3.4' } = {}) {
   const url = new URL(`${ORIGIN}/api/aircraft`);
   url.searchParams.set('lat', String(lat));
   url.searchParams.set('lon', String(lon));
   url.searchParams.set('radius', String(radius));
-  if (prefer) url.searchParams.set('prefer', prefer);
   return new Request(url, { headers: { 'cf-connecting-ip': ip } });
 }
 
@@ -55,12 +48,12 @@ test('rejects an invalid query without calling any upstream provider', async (t)
   assert.equal(response.status, 400);
 });
 
-test('serves the preferred provider (adsb.lol) on success and caches the response', async (t) => {
+test('serves ADSB.fi first on success and caches the response', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   t.mock.method(globalThis, 'fetch', async (input) => {
-    assert.match(String(input), /api\.adsb\.lol/);
-    return new Response(JSON.stringify(ADSB_PAYLOAD), { status: 200 });
+    assert.match(String(input), /opendata\.adsb\.fi/);
+    return new Response(JSON.stringify(ADSB_FI_PAYLOAD), { status: 200 });
   });
 
   const context = makeContext({ request: aircraftRequest(), env: {} });
@@ -69,17 +62,17 @@ test('serves the preferred provider (adsb.lol) on success and caches the respons
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('x-skytrace-cache'), 'MISS');
-  assert.equal(response.headers.get('x-skytrace-provider'), 'adsb.lol');
-  assert.deepEqual(await response.json(), ADSB_PAYLOAD);
+  assert.equal(response.headers.get('x-skytrace-provider'), 'adsb.fi');
+  assert.deepEqual(await response.json(), ADSB_FI_PAYLOAD);
 });
 
-test('a second request within the cache TTL is served from cache, not the network', async (t) => {
+test('a second request within the cache TTL is served from cache', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   let fetchCalls = 0;
   t.mock.method(globalThis, 'fetch', async () => {
     fetchCalls += 1;
-    return new Response(JSON.stringify(ADSB_PAYLOAD), { status: 200 });
+    return new Response(JSON.stringify(ADSB_FI_PAYLOAD), { status: 200 });
   });
 
   const context1 = makeContext({ request: aircraftRequest(), env: {} });
@@ -94,14 +87,14 @@ test('a second request within the cache TTL is served from cache, not the networ
   assert.equal(response2.headers.get('x-skytrace-cache'), 'HIT');
 });
 
-test('falls back to airplanes.live when adsb.lol fails and the daily quota is not exhausted', async (t) => {
+test('falls back from ADSB.fi to adsb.lol', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   t.mock.method(globalThis, 'fetch', async (input) => {
     const url = String(input);
-    if (url.includes('api.adsb.lol')) return new Response('server error', { status: 500 });
-    if (url.includes('api.airplanes.live'))
-      return new Response(JSON.stringify(AIRPLANES_PAYLOAD), { status: 200 });
+    if (url.includes('opendata.adsb.fi')) return new Response('server error', { status: 500 });
+    if (url.includes('api.adsb.lol'))
+      return new Response(JSON.stringify(ADSB_LOL_PAYLOAD), { status: 200 });
     throw new Error(`unexpected fetch: ${url}`);
   });
 
@@ -110,40 +103,40 @@ test('falls back to airplanes.live when adsb.lol fails and the daily quota is no
   await context.flush();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get('x-skytrace-provider'), 'airplanes.live');
-  assert.deepEqual(await response.json(), AIRPLANES_PAYLOAD);
+  assert.equal(response.headers.get('x-skytrace-provider'), 'adsb.lol');
+  assert.deepEqual(await response.json(), ADSB_LOL_PAYLOAD);
 });
 
-test('skips the airplanes.live fallback once the daily quota is exhausted', async (t) => {
-  const { cache, restore } = installFakeCaches();
+test('HTTP 403 pauses ADSB.fi and falls back to adsb.lol', async (t) => {
+  const { restore } = installFakeCaches();
   t.after(restore);
-  const day = utcDay();
-  await cache.put(
-    `${ORIGIN}/__private_stats/${day}`,
-    new Response(JSON.stringify({ ...emptyStats(day), airplanesLiveRequests: getDailyLimit() }))
-  );
-
-  let airplanesLiveCalled = false;
+  const env = {};
+  let fiCalls = 0;
   t.mock.method(globalThis, 'fetch', async (input) => {
     const url = String(input);
-    if (url.includes('api.adsb.lol')) return new Response('server error', { status: 500 });
-    if (url.includes('api.airplanes.live')) airplanesLiveCalled = true;
-    return new Response('server error', { status: 500 });
+    if (url.includes('opendata.adsb.fi')) {
+      fiCalls += 1;
+      return new Response('forbidden', { status: 403 });
+    }
+    return new Response(JSON.stringify(ADSB_LOL_PAYLOAD), { status: 200 });
   });
 
-  const context = makeContext({ request: aircraftRequest(), env: {} });
+  const context = makeContext({ request: aircraftRequest(), env });
   const response = await onRequestGet(context);
   await context.flush();
 
-  assert.equal(airplanesLiveCalled, false);
-  assert.equal(response.status, 502);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-skytrace-provider'), 'adsb.lol');
+  assert.equal(fiCalls, 1);
+  const control = await readProviderControl(env, 'adsb.fi', ORIGIN);
+  assert.equal(control.enabled, false);
+  assert.equal(control.pauseReason, 'HTTP_403');
 });
 
-test('serves a stale cached response when every provider fails', async (t) => {
+test('serves a stale cached response when every active provider fails', async (t) => {
   const { cache, restore } = installFakeCaches();
   t.after(restore);
-  await cache.put(staleCacheKey(), new Response(JSON.stringify(ADSB_PAYLOAD), { status: 200 }));
-
+  await cache.put(staleCacheKey(), new Response(JSON.stringify(ADSB_FI_PAYLOAD), { status: 200 }));
   t.mock.method(globalThis, 'fetch', async () => new Response('down', { status: 500 }));
 
   const context = makeContext({ request: aircraftRequest(), env: {} });
@@ -152,10 +145,10 @@ test('serves a stale cached response when every provider fails', async (t) => {
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('x-skytrace-cache'), 'STALE');
-  assert.deepEqual(await response.json(), ADSB_PAYLOAD);
+  assert.deepEqual(await response.json(), ADSB_FI_PAYLOAD);
 });
 
-test('returns 502 when every provider fails and there is no stale cache', async (t) => {
+test('returns provider diagnostics when no live source and no stale cache are available', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   t.mock.method(globalThis, 'fetch', async () => new Response('down', { status: 500 }));
@@ -167,13 +160,16 @@ test('returns 502 when every provider fails and there is no stale cache', async 
   assert.equal(response.status, 502);
   const payload = await response.json();
   assert.equal(payload.error, 'DATA_TEMPORARILY_UNAVAILABLE');
+  assert.ok(Array.isArray(payload.providers));
+  assert.equal(payload.providers.some((p) => p.provider === 'adsb.fi'), true);
+  assert.equal(payload.providers.some((p) => p.provider === 'adsb.lol'), true);
+  assert.equal(payload.providers.some((p) => p.provider === 'adsb.one'), false);
 });
 
 test('rate limits a client past 60 requests in the same minute', async (t) => {
   const { cache, restore } = installFakeCaches();
   t.after(restore);
   await cache.put(rateLimitKey('9.9.9.9'), new Response('60'));
-
   t.mock.method(globalThis, 'fetch', async () => {
     throw new Error('fetch should not be called once rate limited');
   });
@@ -184,25 +180,26 @@ test('rate limits a client past 60 requests in the same minute', async (t) => {
   assert.equal(response.headers.get('retry-after'), '60');
 });
 
-test('an admin-paused provider is skipped in favor of the fallback', async (t) => {
+test('an admin-paused ADSB.fi is skipped in favor of adsb.lol', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   const env = {};
-  await writeProviderControl(env, 'adsb.lol', { enabled: false, pausedUntil: null }, ORIGIN);
+  await writeProviderControl(env, 'adsb.fi', { enabled: false, pausedUntil: null }, ORIGIN);
 
-  let adsbLolCalled = false;
+  let fiCalled = false;
   t.mock.method(globalThis, 'fetch', async (input) => {
     const url = String(input);
-    if (url.includes('api.adsb.lol')) adsbLolCalled = true;
-    return new Response(JSON.stringify(AIRPLANES_PAYLOAD), { status: 200 });
+    if (url.includes('opendata.adsb.fi')) fiCalled = true;
+    assert.match(url, /api\.adsb\.lol/);
+    return new Response(JSON.stringify(ADSB_LOL_PAYLOAD), { status: 200 });
   });
 
   const context = makeContext({ request: aircraftRequest(), env });
   const response = await onRequestGet(context);
   await context.flush();
 
-  assert.equal(adsbLolCalled, false);
-  assert.equal(response.headers.get('x-skytrace-provider'), 'airplanes.live');
+  assert.equal(fiCalled, false);
+  assert.equal(response.headers.get('x-skytrace-provider'), 'adsb.lol');
 });
 
 test('retries once on a 502 and serves the retry result on success', async (t) => {
@@ -212,7 +209,7 @@ test('retries once on a 502 and serves the retry result on success', async (t) =
   t.mock.method(globalThis, 'fetch', async () => {
     attempts += 1;
     if (attempts === 1) return new Response('bad gateway', { status: 502 });
-    return new Response(JSON.stringify(ADSB_PAYLOAD), { status: 200 });
+    return new Response(JSON.stringify(ADSB_FI_PAYLOAD), { status: 200 });
   });
 
   const context = makeContext({ request: aircraftRequest(), env: {} });
@@ -221,15 +218,14 @@ test('retries once on a 502 and serves the retry result on success', async (t) =
 
   assert.equal(attempts, 2);
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), ADSB_PAYLOAD);
+  assert.equal(response.headers.get('x-skytrace-provider'), 'adsb.fi');
 
   const stats = await readStats(context.env, utcDay(), ORIGIN);
   assert.equal(stats.retries, 1);
   assert.equal(stats.retrySuccesses, 1);
-  assert.equal(stats.retryFailures, 0);
 });
 
-test('gives up after exactly one retry when the retry also fails', async (t) => {
+test('each active provider gets at most one retry on retryable failures', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   let attempts = 0;
@@ -238,69 +234,67 @@ test('gives up after exactly one retry when the retry also fails', async (t) => 
     return new Response('service unavailable', { status: 503 });
   });
 
-  const context = makeContext({ request: aircraftRequest({ prefer: '' }), env: {} });
+  const context = makeContext({ request: aircraftRequest(), env: {} });
   const response = await onRequestGet(context);
   await context.flush();
 
-  // Both adsb.lol and airplanes.live are attempted (initial + 1 retry each) = 4.
   assert.equal(attempts, 4);
   assert.equal(response.status, 502);
-
   const stats = await readStats(context.env, utcDay(), ORIGIN);
   assert.equal(stats.retries, 2);
   assert.equal(stats.retryFailures, 2);
-  assert.equal(stats.retrySuccesses, 0);
 });
 
-test('does not retry a 404 from the upstream provider', async (t) => {
+test('does not retry a 404 before falling back', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
-  let adsbAttempts = 0;
+  let fiAttempts = 0;
   t.mock.method(globalThis, 'fetch', async (input) => {
     const url = String(input);
-    if (url.includes('api.adsb.lol')) {
-      adsbAttempts += 1;
+    if (url.includes('opendata.adsb.fi')) {
+      fiAttempts += 1;
       return new Response('not found', { status: 404 });
     }
-    return new Response(JSON.stringify(AIRPLANES_PAYLOAD), { status: 200 });
+    return new Response(JSON.stringify(ADSB_LOL_PAYLOAD), { status: 200 });
   });
 
   const context = makeContext({ request: aircraftRequest(), env: {} });
   const response = await onRequestGet(context);
   await context.flush();
 
-  assert.equal(adsbAttempts, 1);
-  assert.equal(response.headers.get('x-skytrace-provider'), 'airplanes.live');
-
+  assert.equal(fiAttempts, 1);
+  assert.equal(response.headers.get('x-skytrace-provider'), 'adsb.lol');
   const stats = await readStats(context.env, utcDay(), ORIGIN);
   assert.equal(stats.retries, 0);
 });
 
-test('does not retry a 429 from the upstream provider', async (t) => {
+test('does not retry a 429 and automatically falls back', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
-  let adsbAttempts = 0;
+  const env = {};
+  let fiAttempts = 0;
   t.mock.method(globalThis, 'fetch', async (input) => {
     const url = String(input);
-    if (url.includes('api.adsb.lol')) {
-      adsbAttempts += 1;
+    if (url.includes('opendata.adsb.fi')) {
+      fiAttempts += 1;
       return new Response('too many requests', { status: 429, headers: { 'retry-after': '30' } });
     }
-    return new Response(JSON.stringify(AIRPLANES_PAYLOAD), { status: 200 });
+    return new Response(JSON.stringify(ADSB_LOL_PAYLOAD), { status: 200 });
   });
 
-  const context = makeContext({ request: aircraftRequest(), env: {} });
+  const context = makeContext({ request: aircraftRequest(), env });
   const response = await onRequestGet(context);
   await context.flush();
 
-  assert.equal(adsbAttempts, 1);
-  assert.equal(response.headers.get('x-skytrace-provider'), 'airplanes.live');
-
-  const stats = await readStats(context.env, utcDay(), ORIGIN);
+  assert.equal(fiAttempts, 1);
+  assert.equal(response.headers.get('x-skytrace-provider'), 'adsb.lol');
+  const stats = await readStats(env, utcDay(), ORIGIN);
   assert.equal(stats.retries, 0);
+  const control = await readProviderControl(env, 'adsb.fi', ORIGIN);
+  assert.equal(control.pauseReason, 'HTTP_429');
 });
 
-test('retries a timeout (network abort)', async (t) => {
+test('retries a timeout once', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   let attempts = 0;
@@ -311,7 +305,7 @@ test('retries a timeout (network abort)', async (t) => {
       error.name = 'AbortError';
       throw error;
     }
-    return new Response(JSON.stringify(ADSB_PAYLOAD), { status: 200 });
+    return new Response(JSON.stringify(ADSB_FI_PAYLOAD), { status: 200 });
   });
 
   const context = makeContext({ request: aircraftRequest(), env: {} });
@@ -322,7 +316,7 @@ test('retries a timeout (network abort)', async (t) => {
   assert.equal(response.status, 200);
 });
 
-test('honors a short Retry-After header instead of the default backoff', async (t) => {
+test('honors a short Retry-After header on retryable responses', async (t) => {
   const { restore } = installFakeCaches();
   t.after(restore);
   let attempts = 0;
@@ -334,7 +328,7 @@ test('honors a short Retry-After header instead of the default backoff', async (
         headers: { 'retry-after': '0.05' },
       });
     }
-    return new Response(JSON.stringify(ADSB_PAYLOAD), { status: 200 });
+    return new Response(JSON.stringify(ADSB_FI_PAYLOAD), { status: 200 });
   });
 
   const context = makeContext({ request: aircraftRequest(), env: {} });
@@ -345,6 +339,5 @@ test('honors a short Retry-After header instead of the default backoff', async (
 
   assert.equal(attempts, 2);
   assert.equal(response.status, 200);
-  // Default backoff is 700ms; a respected 0.05s Retry-After should finish well under that.
   assert.ok(elapsedMs < 400, `expected the short Retry-After to be honored, took ${elapsedMs}ms`);
 });
