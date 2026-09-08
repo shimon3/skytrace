@@ -169,7 +169,9 @@
   animation: search-spin 0.8s linear infinite;
 }
 @keyframes search-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 @media (max-width: 760px) {
   #search-ui-host {

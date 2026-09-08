@@ -41,7 +41,9 @@ if (search) {
   }
 
   function saveHistory(query) {
-    const q = String(query || '').trim().toUpperCase();
+    const q = String(query || '')
+      .trim()
+      .toUpperCase();
     if (!q) return;
     const items = [q, ...loadHistory().filter((item) => item !== q)].slice(0, MAX_HISTORY);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
@@ -86,9 +88,11 @@ if (search) {
       localStorage.removeItem(HISTORY_KEY);
       renderHome();
     });
-    popover.querySelectorAll('[data-query]').forEach((button) =>
-      button.addEventListener('click', () => executeSearch(button.dataset.query))
-    );
+    popover
+      .querySelectorAll('[data-query]')
+      .forEach((button) =>
+        button.addEventListener('click', () => executeSearch(button.dataset.query))
+      );
     popover.querySelector('[data-action="nearby"]')?.addEventListener('click', locateNearby);
     popover.querySelector('[data-action="route"]')?.addEventListener('click', () => {
       popover.querySelector('#route-from')?.focus();
@@ -124,7 +128,12 @@ if (search) {
     const map = window.__skytraceMap;
     if (Number.isFinite(lat) && Number.isFinite(lon) && map) {
       map.setView([lat, lon], Math.max(map.getZoom?.() || 6, 7), { animate: true });
-      const identifier = aircraft.flight || aircraft.callsign || aircraft.registration || aircraft.r || fallbackQuery;
+      const identifier =
+        aircraft.flight ||
+        aircraft.callsign ||
+        aircraft.registration ||
+        aircraft.r ||
+        fallbackQuery;
       setTimeout(() => nativeSearch(String(identifier || fallbackQuery).trim()), 1400);
       popover.classList.remove('show');
       return true;
@@ -153,7 +162,9 @@ if (search) {
   }
 
   async function executeSearch(rawQuery) {
-    const query = String(rawQuery ?? search.value).trim().toUpperCase();
+    const query = String(rawQuery ?? search.value)
+      .trim()
+      .toUpperCase();
     if (!query) return showPopover();
     search.value = query;
     saveHistory(query);
@@ -191,29 +202,44 @@ if (search) {
       }
 
       nativeSearch(query);
-      showMessage(`Aucun avion actif trouvé mondialement pour ${query}. La recherche locale a aussi été lancée.`, { error: true });
+      showMessage(
+        `Aucun avion actif trouvé mondialement pour ${query}. La recherche locale a aussi été lancée.`,
+        { error: true }
+      );
     } catch (error) {
       console.error('Global search failed:', error);
       nativeSearch(query);
-      showMessage('Recherche mondiale indisponible pour le moment. La recherche locale a été lancée.', { error: true });
+      showMessage(
+        'Recherche mondiale indisponible pour le moment. La recherche locale a été lancée.',
+        { error: true }
+      );
     }
   }
 
   async function fetchRoute(from, to) {
-    const response = await fetch(`/api/route-flights?dep=${encodeURIComponent(from)}&arr=${encodeURIComponent(to)}`, {
-      headers: { accept: 'application/json' },
-      cache: 'no-store',
-    });
+    const response = await fetch(
+      `/api/route-flights?dep=${encodeURIComponent(from)}&arr=${encodeURIComponent(to)}`,
+      {
+        headers: { accept: 'application/json' },
+        cache: 'no-store',
+      }
+    );
     if (!response.ok) throw new Error(`Route lookup HTTP ${response.status}`);
     const payload = await response.json();
     return Array.isArray(payload?.flights) ? payload.flights : [];
   }
 
   async function searchRoute(fromRaw, toRaw) {
-    const from = String(fromRaw || '').trim().toUpperCase();
-    const to = String(toRaw || '').trim().toUpperCase();
+    const from = String(fromRaw || '')
+      .trim()
+      .toUpperCase();
+    const to = String(toRaw || '')
+      .trim()
+      .toUpperCase();
     if (!/^[A-Z]{3}$/.test(from) || !/^[A-Z]{3}$/.test(to)) {
-      return showMessage('Entre deux codes aéroport IATA de 3 lettres, par exemple LYS → TLV.', { error: true });
+      return showMessage('Entre deux codes aéroport IATA de 3 lettres, par exemple LYS → TLV.', {
+        error: true,
+      });
     }
     const query = `${from}-${to}`;
     search.value = query;
@@ -226,7 +252,13 @@ if (search) {
         const arrAirport = AIRPORTS[to];
         const map = window.__skytraceMap;
         if (depAirport && arrAirport && map) {
-          map.fitBounds([[depAirport.lat, depAirport.lon], [arrAirport.lat, arrAirport.lon]], { padding: [60, 60] });
+          map.fitBounds(
+            [
+              [depAirport.lat, depAirport.lon],
+              [arrAirport.lat, arrAirport.lon],
+            ],
+            { padding: [60, 60] }
+          );
         }
         return showMessage(`Aucun vol en direct trouvé actuellement pour ${from} → ${to}.`);
       }
@@ -247,13 +279,17 @@ if (search) {
       );
     } catch (error) {
       console.error('Route search failed:', error);
-      showMessage('Impossible de récupérer les vols de cet itinéraire pour le moment.', { error: true });
+      showMessage('Impossible de récupérer les vols de cet itinéraire pour le moment.', {
+        error: true,
+      });
     }
   }
 
   function locateNearby() {
     if (!navigator.geolocation) {
-      return showMessage('La géolocalisation n’est pas disponible dans ce navigateur.', { error: true });
+      return showMessage('La géolocalisation n’est pas disponible dans ce navigateur.', {
+        error: true,
+      });
     }
     showMessage('Recherche de ta position…', { loading: true });
     navigator.geolocation.getCurrentPosition(
@@ -265,7 +301,11 @@ if (search) {
         saveHistory('AUTOUR DE MOI');
         popover.classList.remove('show');
       },
-      () => showMessage('Position non disponible. Autorise la localisation du navigateur puis réessaie.', { error: true }),
+      () =>
+        showMessage(
+          'Position non disponible. Autorise la localisation du navigateur puis réessaie.',
+          { error: true }
+        ),
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
     );
   }

@@ -18,7 +18,7 @@ const aircraftWorker = await readFile(
 const apiClient = await readFile(new URL('../js/api-client.js', import.meta.url), 'utf8');
 
 const forbiddenSecretPatterns = [
-  /AIRLABS_API_KEY\s*=\s*['"][^'"]+['"]/, 
+  /AIRLABS_API_KEY\s*=\s*['"][^'"]+['"]/,
   /api_key=[A-Za-z0-9_-]{12,}/,
 ];
 const optionalVersion = '(?:\\?v=[A-Za-z0-9._-]+)?';

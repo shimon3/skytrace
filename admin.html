@@ -12,14 +12,19 @@
         background: #081019;
         color: #e8eef8;
       }
-      * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+      }
       body {
         margin: 0;
         min-height: 100vh;
         background: radial-gradient(circle at top, #132235 0, #081019 45%);
         color: #e8eef8;
       }
-      main { width: min(1180px, calc(100% - 28px)); margin: 28px auto; }
+      main {
+        width: min(1180px, calc(100% - 28px));
+        margin: 28px auto;
+      }
       .card {
         background: #101925;
         border: 1px solid #243044;
@@ -27,10 +32,22 @@
         padding: 22px;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
       }
-      h1, h2 { margin-top: 0; }
-      h2 { font-size: 17px; margin-bottom: 14px; }
-      p { color: #9fb0c7; }
-      form { display: flex; gap: 10px; flex-wrap: wrap; }
+      h1,
+      h2 {
+        margin-top: 0;
+      }
+      h2 {
+        font-size: 17px;
+        margin-bottom: 14px;
+      }
+      p {
+        color: #9fb0c7;
+      }
+      form {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
       input {
         flex: 1 1 320px;
         border: 1px solid #31415b;
@@ -48,7 +65,10 @@
         font-weight: 800;
         cursor: pointer;
       }
-      button:disabled { opacity: 0.5; cursor: wait; }
+      button:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
       .secondary {
         background: #1b2a3c;
         color: #dce7f5;
@@ -59,21 +79,36 @@
         color: #ffd8e0;
         border: 1px solid #7b3148;
       }
-      #error { color: #ff7b92; min-height: 24px; }
-      #dashboard { display: none; margin-top: 20px; }
+      #error {
+        color: #ff7b92;
+        min-height: 24px;
+      }
+      #dashboard {
+        display: none;
+        margin-top: 20px;
+      }
       .grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
         gap: 12px;
       }
-      .metric, .provider, .section {
+      .metric,
+      .provider,
+      .section {
         background: #0b141f;
         border: 1px solid #243044;
         border-radius: 14px;
         padding: 16px;
       }
-      .metric small, .muted { color: #8498b4; }
-      .metric strong { font-size: 27px; display: block; margin-top: 6px; }
+      .metric small,
+      .muted {
+        color: #8498b4;
+      }
+      .metric strong {
+        font-size: 27px;
+        display: block;
+        margin-top: 6px;
+      }
       .toolbar {
         display: flex;
         align-items: center;
@@ -100,26 +135,56 @@
         border-radius: 999px;
         text-transform: uppercase;
       }
-      .operational { background: #123c31; color: #63f1be; }
-      .limited, .degraded { background: #493a14; color: #ffd76a; }
-      .unavailable, .not-configured { background: #4a1e2a; color: #ff9bad; }
-      .unknown { background: #263244; color: #a9bad1; }
-      .paused { background: #352d4d; color: #c8baff; }
+      .operational {
+        background: #123c31;
+        color: #63f1be;
+      }
+      .limited,
+      .degraded {
+        background: #493a14;
+        color: #ffd76a;
+      }
+      .unavailable,
+      .not-configured {
+        background: #4a1e2a;
+        color: #ff9bad;
+      }
+      .unknown {
+        background: #263244;
+        color: #a9bad1;
+      }
+      .paused {
+        background: #352d4d;
+        color: #c8baff;
+      }
       .provider dl {
         display: grid;
         grid-template-columns: 1fr auto;
         gap: 7px 12px;
         margin: 14px 0 0;
       }
-      .provider dt { color: #8fa2bb; }
-      .provider dd { margin: 0; font-weight: 700; }
+      .provider dt {
+        color: #8fa2bb;
+      }
+      .provider dd {
+        margin: 0;
+        font-weight: 700;
+      }
       .provider-control-state {
         font-size: 12px;
         color: #8498b4;
         margin: 14px 0 10px;
       }
-      .provider-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-      .provider-actions button { flex: 1 1 140px; padding: 9px 10px; font-size: 12px; }
+      .provider-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .provider-actions button {
+        flex: 1 1 140px;
+        padding: 9px 10px;
+        font-size: 12px;
+      }
       .charts {
         display: grid;
         grid-template-columns: 2fr 1fr;
@@ -150,16 +215,42 @@
         background: linear-gradient(180deg, #2fe6a8, #178f70);
         border-radius: 5px 5px 2px 2px;
       }
-      .bar-label { font-size: 9px; color: #7890ad; }
-      .bar-value { font-size: 9px; color: #c8d5e6; }
-      .daily .bar { background: linear-gradient(180deg, #6cb7ff, #3769d7); }
-      progress { width: 100%; height: 14px; margin-top: 16px; }
-      .details { font-size: 12px; line-height: 1.7; color: #8093ad; }
-      .top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      .bar-label {
+        font-size: 9px;
+        color: #7890ad;
+      }
+      .bar-value {
+        font-size: 9px;
+        color: #c8d5e6;
+      }
+      .daily .bar {
+        background: linear-gradient(180deg, #6cb7ff, #3769d7);
+      }
+      progress {
+        width: 100%;
+        height: 14px;
+        margin-top: 16px;
+      }
+      .details {
+        font-size: 12px;
+        line-height: 1.7;
+        color: #8093ad;
+      }
+      .top-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
       @media (max-width: 800px) {
-        .charts { grid-template-columns: 1fr; }
-        .chart { height: 160px; }
-        .provider-grid { grid-template-columns: 1fr; }
+        .charts {
+          grid-template-columns: 1fr;
+        }
+        .chart {
+          height: 160px;
+        }
+        .provider-grid {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
@@ -169,7 +260,13 @@
         <h1>SkyTrace — Administration</h1>
         <p>Accès privé aux statistiques, à l’état des services et à la consommation.</p>
         <form id="login-form">
-          <input id="admin-token" type="password" autocomplete="current-password" placeholder="Jeton administrateur" required />
+          <input
+            id="admin-token"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Jeton administrateur"
+            required
+          />
           <button type="submit">Ouvrir le dashboard</button>
         </form>
         <div id="error" role="alert"></div>
@@ -182,12 +279,20 @@
             <span class="muted" id="updated-at">—</span>
           </div>
           <div class="grid">
-            <div class="metric"><small>Requêtes externes aujourd’hui</small><strong id="requests">—</strong></div>
+            <div class="metric">
+              <small>Requêtes externes aujourd’hui</small><strong id="requests">—</strong>
+            </div>
             <div class="metric"><small>Succès</small><strong id="successes">—</strong></div>
             <div class="metric"><small>Échecs</small><strong id="failures">—</strong></div>
-            <div class="metric"><small>Réponses depuis le cache</small><strong id="cache-hits">—</strong></div>
-            <div class="metric"><small>Requêtes restantes — budget ADSB.fi</small><strong id="remaining">—</strong></div>
-            <div class="metric"><small>Blocages quota</small><strong id="quota-blocked">—</strong></div>
+            <div class="metric">
+              <small>Réponses depuis le cache</small><strong id="cache-hits">—</strong>
+            </div>
+            <div class="metric">
+              <small>Requêtes restantes — budget ADSB.fi</small><strong id="remaining">—</strong>
+            </div>
+            <div class="metric">
+              <small>Blocages quota</small><strong id="quota-blocked">—</strong>
+            </div>
           </div>
           <progress id="quota-progress" max="1000" value="0"></progress>
           <p id="quota-text"></p>

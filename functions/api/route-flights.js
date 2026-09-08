@@ -16,7 +16,9 @@ function json(payload, status = 200) {
 }
 
 function airportCode(value) {
-  const code = String(value || '').trim().toUpperCase();
+  const code = String(value || '')
+    .trim()
+    .toUpperCase();
   return /^[A-Z]{3}$/.test(code) ? code : null;
 }
 
@@ -60,7 +62,9 @@ export async function onRequestGet(context) {
 
   try {
     const response = await fetch(upstream, { headers: { accept: 'application/json' } });
-    context.waitUntil(recordProviderRequest(context.env, response.status, requestUrl.origin, 'airlabs'));
+    context.waitUntil(
+      recordProviderRequest(context.env, response.status, requestUrl.origin, 'airlabs')
+    );
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.error) {
       return json({ error: payload?.error?.message || `AirLabs HTTP ${response.status}` }, 502);

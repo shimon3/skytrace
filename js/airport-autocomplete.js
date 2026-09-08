@@ -53,7 +53,8 @@ function dedupeCatalog(items) {
       lon: Number.isFinite(lon) ? lon : null,
     };
     const existing = byCode.get(code);
-    if (!existing || EXTRA_AIRPORTS.some((item) => item.code === code)) byCode.set(code, normalized);
+    if (!existing || EXTRA_AIRPORTS.some((item) => item.code === code))
+      byCode.set(code, normalized);
   }
   return [...byCode.values()];
 }
@@ -132,7 +133,9 @@ function airportMatches(raw, source = catalog) {
 }
 
 function saveHistory(query) {
-  const q = String(query || '').trim().toUpperCase();
+  const q = String(query || '')
+    .trim()
+    .toUpperCase();
   if (!q) return;
   try {
     const previous = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
@@ -167,7 +170,8 @@ function injectStyles() {
 }
 
 function suggestionHtml(airport) {
-  const city = airport.city && normalize(airport.city) !== normalize(airport.name) ? airport.city : '';
+  const city =
+    airport.city && normalize(airport.city) !== normalize(airport.name) ? airport.city : '';
   return `<button class="airport-suggestion" type="button" data-airport-code="${airport.code}"><span class="airport-code">${airport.code}</span><span class="airport-main"><span class="airport-name">${airport.name}</span>${city ? `<span class="airport-city">${city}</span>` : ''}</span></button>`;
 }
 

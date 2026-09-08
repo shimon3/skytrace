@@ -2,7 +2,9 @@ const COOLDOWN_PREFIX = '/__skytrace_provider_cooldown/';
 const MAX_COOLDOWN_SECONDS = 24 * 60 * 60;
 
 function key(origin, provider) {
-  return new Request(`${origin}${COOLDOWN_PREFIX}${encodeURIComponent(provider)}`, { method: 'GET' });
+  return new Request(`${origin}${COOLDOWN_PREFIX}${encodeURIComponent(provider)}`, {
+    method: 'GET',
+  });
 }
 
 export async function providerCoolingDown(provider, origin) {

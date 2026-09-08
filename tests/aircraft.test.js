@@ -161,9 +161,18 @@ test('returns provider diagnostics when no live source and no stale cache are av
   const payload = await response.json();
   assert.equal(payload.error, 'DATA_TEMPORARILY_UNAVAILABLE');
   assert.ok(Array.isArray(payload.providers));
-  assert.equal(payload.providers.some((p) => p.provider === 'adsb.fi'), true);
-  assert.equal(payload.providers.some((p) => p.provider === 'adsb.lol'), true);
-  assert.equal(payload.providers.some((p) => p.provider === 'adsb.one'), false);
+  assert.equal(
+    payload.providers.some((p) => p.provider === 'adsb.fi'),
+    true
+  );
+  assert.equal(
+    payload.providers.some((p) => p.provider === 'adsb.lol'),
+    true
+  );
+  assert.equal(
+    payload.providers.some((p) => p.provider === 'adsb.one'),
+    false
+  );
 });
 
 test('rate limits a client past 60 requests in the same minute', async (t) => {

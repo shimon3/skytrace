@@ -167,13 +167,17 @@ async function pollTrackedFlight({ first = false } = {}) {
     if (aircraft) {
       showAircraft(aircraft, { recenter: first });
       const seen = Number(aircraft.seen);
-      const freshness = Number.isFinite(seen) ? ` · vue il y a ${Math.max(0, Math.round(seen))} s` : '';
+      const freshness = Number.isFinite(seen)
+        ? ` · vue il y a ${Math.max(0, Math.round(seen))} s`
+        : '';
       setTrackerStatus(`Position ADS-B trouvée${freshness}. Actualisation toutes les 30 s.`);
       return;
     }
   }
 
-  setTrackerStatus('Vol connu, mais aucune position ADS-B disponible pour le moment. Nouvelle tentative dans 30 s.');
+  setTrackerStatus(
+    'Vol connu, mais aucune position ADS-B disponible pour le moment. Nouvelle tentative dans 30 s.'
+  );
 }
 
 async function startTracking(rawFlight) {
