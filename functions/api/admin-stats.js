@@ -77,6 +77,7 @@ export async function onRequestGet(context) {
 
   const providerDefinitions = [
     { id: 'adsb.fi', label: 'ADSB.fi', configured: true },
+    { id: 'adsb.one', label: 'ADSB One', configured: true },
     { id: 'adsb.lol', label: 'adsb.lol', configured: true },
     {
       id: 'airplanes.live',
