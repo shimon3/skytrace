@@ -6,7 +6,7 @@ import {
 } from '../lib/provider-controls.js';
 import { recordProviderRequest } from '../lib/stats.js';
 
-const POSITION_PROVIDERS = new Set(['adsb.fi', 'adsb.one', 'adsb.lol', 'airplanes.live']);
+const POSITION_PROVIDERS = new Set(['adsb.fi', 'adsb.lol', 'airplanes.live']);
 const TEST_TIMEOUT_MS = 8000;
 
 function json(payload, status = 200) {
@@ -41,15 +41,6 @@ function providerTestRequest(context, provider) {
   if (provider === 'adsb.fi') {
     return {
       url: 'https://opendata.adsb.fi/api/v3/lat/31.5/lon/34.8/dist/25',
-      headers: {
-        accept: 'application/json',
-        'user-agent': 'SkyTrace/1.0 (+https://skytrace-83z.pages.dev)',
-      },
-    };
-  }
-  if (provider === 'adsb.one') {
-    return {
-      url: 'https://api.adsb.one/v2/point/31.5/34.8/25',
       headers: {
         accept: 'application/json',
         'user-agent': 'SkyTrace/1.0 (+https://skytrace-83z.pages.dev)',
@@ -150,9 +141,6 @@ export async function onRequestPost(context) {
 
   if (action === 'test') {
     const result = await testProvider(context, provider, origin);
-    // A provider test failing is an expected diagnostic result, not an internal
-    // endpoint failure. Always return 200 so the admin UI can show the real
-    // upstream status (403/429/598/599/etc.) instead of a generic HTTP 500/502.
     return json({ provider, action, ...result }, 200);
   }
 
