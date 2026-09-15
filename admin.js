@@ -12,229 +12,73 @@ let token = sessionStorage.getItem('skytrace-admin-token') || '';
 let autoRefreshTimer = null;
 let providerActionInProgress = false;
 
-function setText(id, value) {
-  document.getElementById(id).textContent = String(value ?? '—');
-}
+function setText(id, value) { document.getElementById(id).textContent = String(value ?? '—'); }
+function formatDate(value) { if (!value) return 'Jamais'; const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('fr-FR'); }
+function healthLabel(value) { return ({operational:'Opérationnel',limited:'Limité',degraded:'Dégradé',unavailable:'Indisponible','not-configured':'Non configuré',paused:'Suspendu',unknown:'Pas encore testé'}[value] || value); }
+function pauseReasonLabel(reason) { return ({HTTP_429:'Pause automatique : HTTP 429 / limitation fournisseur',SAFETY_BUDGET:'Pause automatique : seuil de sécurité atteint',MANUAL:'Pause manuelle'}[reason] || null); }
+function tomorrowMidnightIso() { const date = new Date(); date.setDate(date.getDate()+1); date.setHours(0,0,0,0); return date.toISOString(); }
 
-function formatDate(value) {
-  if (!value) return 'Jamais';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('fr-FR');
-}
-
-function healthLabel(value) {
-  return (
-    {
-      operational: 'Opérationnel',
-      limited: 'Limité',
-      degraded: 'Dégradé',
-      unavailable: 'Indisponible',
-      'not-configured': 'Non configuré',
-      paused: 'Suspendu',
-      unknown: 'Pas encore testé',
-    }[value] || value
-  );
-}
-
-function pauseReasonLabel(reason) {
-  return (
-    {
-      HTTP_429: 'Pause automatique : HTTP 429 / limitation fournisseur',
-      SAFETY_BUDGET: 'Pause automatique : seuil de sécurité atteint',
-      MANUAL: 'Pause manuelle',
-    }[reason] || null
-  );
-}
-
-function tomorrowMidnightIso() {
-  const date = new Date();
-  date.setDate(date.getDate() + 1);
-  date.setHours(0, 0, 0, 0);
-  return date.toISOString();
-}
-
-async function providerAction(provider, action) {
+async function providerAction(provider, action, sourceButton = null) {
   if (providerActionInProgress) return;
   providerActionInProgress = true;
-  errorBox.textContent = '';
+  const originalLabel = sourceButton?.textContent || '';
+  if (sourceButton) { sourceButton.disabled = true; sourceButton.textContent = action === 'test' ? 'Test en cours…' : 'Traitement…'; }
+  errorBox.textContent = action === 'test' ? `Test de ${provider} en cours…` : '';
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), action === 'test' ? 20000 : 12000);
   try {
     const body = { provider, action };
     if (action === 'pause') body.resumeAt = tomorrowMidnightIso();
     const response = await fetch('/api/admin-provider-control', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-        accept: 'application/json',
-      },
-      body: JSON.stringify(body),
+      method:'POST',
+      headers:{authorization:`Bearer ${token}`,'content-type':'application/json',accept:'application/json'},
+      body:JSON.stringify(body),
+      signal:controller.signal,
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      if (payload.error === 'AT_LEAST_ONE_POSITION_PROVIDER_REQUIRED') {
-        throw new Error(
-          'Impossible de suspendre ce service : au moins une source de positions doit rester active.'
-        );
-      }
+      if (payload.error === 'AT_LEAST_ONE_POSITION_PROVIDER_REQUIRED') throw new Error('Impossible de suspendre ce service : au moins une source de positions doit rester active.');
       if (payload.error === 'NOT_CONFIGURED') throw new Error('Ce service n’est pas configuré.');
       throw new Error(payload.error || `Erreur ${response.status}`);
     }
     if (action === 'test') {
+      const detail = payload.detail || payload.message || payload.code || '';
       errorBox.textContent = payload.ok
-        ? `Test réussi pour ${provider} (HTTP ${payload.status}).`
-        : `Test échoué pour ${provider} (HTTP ${payload.status ?? '—'}).`;
+        ? `Test réussi pour ${provider} (HTTP ${payload.status})${Number.isFinite(payload.aircraft) ? ` · ${payload.aircraft} avion(s)` : ''}.`
+        : `Test échoué pour ${provider} (HTTP ${payload.status ?? '—'})${detail ? ` · ${detail}` : ''}.`;
     }
     await loadStats();
   } catch (error) {
-    errorBox.textContent = error instanceof Error ? error.message : String(error);
+    errorBox.textContent = error?.name === 'AbortError'
+      ? `Le test de ${provider} a dépassé le délai maximal. Réessaie dans quelques secondes.`
+      : error instanceof Error ? error.message : String(error);
   } finally {
+    clearTimeout(timeout);
     providerActionInProgress = false;
+    if (sourceButton?.isConnected) { sourceButton.disabled = false; sourceButton.textContent = originalLabel; }
   }
 }
 
 function renderProviders(providers = []) {
   providersBox.replaceChildren();
   for (const provider of providers) {
-    const card = document.createElement('article');
-    card.className = 'provider';
-    const reason = pauseReasonLabel(provider.pauseReason);
-    const pauseText = provider.pausedUntil
-      ? `${reason ? `${reason}. ` : ''}Reprise automatique : ${formatDate(provider.pausedUntil)}`
-      : provider.enabled
-        ? 'Service actif'
-        : reason || 'Suspendu jusqu’à réactivation manuelle';
-    const usage = Number(provider.percentUsed || 0);
-    const autoPauseAt = Number(provider.autoPausePercent || 80);
-    const progressValue = Math.min(100, Math.max(0, usage));
-
-    card.innerHTML = `
-      <div class="provider-head">
-        <strong>${provider.label}</strong>
-        <span class="status ${provider.health}">${healthLabel(provider.health)}</span>
-      </div>
-      <dl>
-        <dt>Requêtes aujourd’hui</dt><dd>${provider.requests}</dd>
-        <dt>Succès</dt><dd>${provider.successes}</dd>
-        <dt>Échecs</dt><dd>${provider.failures}</dd>
-        <dt>Utilisation budget SkyTrace</dt><dd>${usage.toFixed(1)} %</dd>
-        <dt>Budget journalier interne</dt><dd>${provider.dailyBudget}</dd>
-        <dt>Pause automatique à</dt><dd>${autoPauseAt} %</dd>
-        <dt>Dernier HTTP</dt><dd>${provider.lastStatus ?? '—'}</dd>
-        <dt>Dernier appel</dt><dd>${formatDate(provider.lastRequestAt)}</dd>
-      </dl>
-      <progress max="100" value="${progressValue}" title="${usage.toFixed(1)} %"></progress>
-      <p class="provider-control-state">${pauseText}</p>
-      <div class="provider-actions">
-        <button type="button" class="provider-test secondary">Tester maintenant</button>
-        ${
-          provider.enabled
-            ? '<button type="button" class="provider-pause danger">Suspendre jusqu’à demain</button>'
-            : '<button type="button" class="provider-enable">Réactiver maintenant</button>'
-        }
-      </div>`;
-    card
-      .querySelector('.provider-test')
-      .addEventListener('click', () => providerAction(provider.id, 'test'));
-    card
-      .querySelector('.provider-pause')
-      ?.addEventListener('click', () => providerAction(provider.id, 'pause'));
-    card
-      .querySelector('.provider-enable')
-      ?.addEventListener('click', () => providerAction(provider.id, 'enable'));
+    const card=document.createElement('article'); card.className='provider';
+    const reason=pauseReasonLabel(provider.pauseReason);
+    const pauseText=provider.pausedUntil?`${reason?`${reason}. `:''}Reprise automatique : ${formatDate(provider.pausedUntil)}`:provider.enabled?'Service actif':reason||'Suspendu jusqu’à réactivation manuelle';
+    const usage=Number(provider.percentUsed||0),autoPauseAt=Number(provider.autoPausePercent||80),progressValue=Math.min(100,Math.max(0,usage));
+    card.innerHTML=`<div class="provider-head"><strong>${provider.label}</strong><span class="status ${provider.health}">${healthLabel(provider.health)}</span></div><dl><dt>Requêtes aujourd’hui</dt><dd>${provider.requests}</dd><dt>Succès</dt><dd>${provider.successes}</dd><dt>Échecs</dt><dd>${provider.failures}</dd><dt>Utilisation budget SkyTrace</dt><dd>${usage.toFixed(1)} %</dd><dt>Budget journalier interne</dt><dd>${provider.dailyBudget}</dd><dt>Pause automatique à</dt><dd>${autoPauseAt} %</dd><dt>Dernier HTTP</dt><dd>${provider.lastStatus??'—'}</dd><dt>Dernier appel</dt><dd>${formatDate(provider.lastRequestAt)}</dd></dl><progress max="100" value="${progressValue}" title="${usage.toFixed(1)} %"></progress><p class="provider-control-state">${pauseText}</p><div class="provider-actions"><button type="button" class="provider-test secondary">Tester maintenant</button>${provider.enabled?'<button type="button" class="provider-pause danger">Suspendre jusqu’à demain</button>':'<button type="button" class="provider-enable">Réactiver maintenant</button>'}</div>`;
+    const testButton=card.querySelector('.provider-test');
+    testButton.addEventListener('click',()=>providerAction(provider.id,'test',testButton));
+    const pauseButton=card.querySelector('.provider-pause'); if(pauseButton) pauseButton.addEventListener('click',()=>providerAction(provider.id,'pause',pauseButton));
+    const enableButton=card.querySelector('.provider-enable'); if(enableButton) enableButton.addEventListener('click',()=>providerAction(provider.id,'enable',enableButton));
     providersBox.appendChild(card);
   }
 }
 
-function renderBars(container, data, labelKey) {
-  container.replaceChildren();
-  const max = Math.max(1, ...data.map((item) => Number(item.requests) || 0));
-  for (const item of data) {
-    const wrap = document.createElement('div');
-    wrap.className = 'bar-wrap';
-    const value = Number(item.requests) || 0;
-    const height = Math.max(value ? 5 : 2, Math.round((value / max) * 130));
-    wrap.innerHTML = `<span class="bar-value">${value}</span><div class="bar" style="height:${height}px" title="${value} requêtes"></div><span class="bar-label">${item[labelKey]}</span>`;
-    container.appendChild(wrap);
-  }
-}
-
-async function loadStats() {
-  if (!token) return;
-  if (!providerActionInProgress) errorBox.textContent = '';
-
-  try {
-    const response = await fetch('/api/admin-stats', {
-      headers: { authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      if (response.status === 401) throw new Error('Jeton administrateur incorrect.');
-      if (payload.error === 'ADMIN_NOT_CONFIGURED')
-        throw new Error('Le jeton administrateur doit être configuré dans Cloudflare Pages.');
-      throw new Error(`Erreur ${response.status}`);
-    }
-
-    sessionStorage.setItem('skytrace-admin-token', token);
-    form.style.display = 'none';
-    dashboard.style.display = 'block';
-
-    setText('requests', payload.requests);
-    setText('remaining', payload.remaining);
-    setText('successes', payload.successes);
-    setText('failures', payload.failures);
-    setText('cache-hits', payload.cacheHits);
-    setText('quota-blocked', payload.quotaBlocked);
-
-    const progress = document.getElementById('quota-progress');
-    progress.max = payload.dailyLimit || 1000;
-    progress.value = payload.adsbFiRequests || 0;
-
-    document.getElementById('quota-text').textContent =
-      `${payload.primaryProvider || 'adsb.fi'} : ${payload.percentUsed || 0} % du budget SkyTrace journalier consommé · pause auto à ${payload.autoPausePercent || 80} %.`;
-    document.getElementById('details').textContent =
-      `Jour UTC : ${payload.day} · Bascules de secours : ${payload.fallbackActivations || 0} · Dernier service : ${payload.lastProvider || '—'} · Dernier statut : ${payload.lastStatus ?? '—'} · Stockage : ${payload.storage}`;
-    document.getElementById('updated-at').textContent =
-      `Actualisé : ${new Date().toLocaleTimeString('fr-FR')}`;
-
-    renderProviders(payload.providers || []);
-    renderBars(hourlyChart, payload.hourly || [], 'hour');
-    renderBars(dailyChart, payload.history || [], 'day');
-  } catch (error) {
-    errorBox.textContent = error instanceof Error ? error.message : String(error);
-    if (String(errorBox.textContent).includes('incorrect')) {
-      sessionStorage.removeItem('skytrace-admin-token');
-      dashboard.style.display = 'none';
-      form.style.display = 'flex';
-    }
-  }
-}
-
-function startAutoRefresh() {
-  clearInterval(autoRefreshTimer);
-  autoRefreshTimer = setInterval(loadStats, 60000);
-}
-
-form.addEventListener('submit', (event) => {
-  event.preventDefault();
-  token = tokenInput.value;
-  loadStats();
-  startAutoRefresh();
-});
-
-refreshButton.addEventListener('click', loadStats);
-logoutButton.addEventListener('click', () => {
-  token = '';
-  sessionStorage.removeItem('skytrace-admin-token');
-  dashboard.style.display = 'none';
-  form.style.display = 'flex';
-  tokenInput.value = '';
-  clearInterval(autoRefreshTimer);
-});
-
-if (token) {
-  tokenInput.value = token;
-  loadStats();
-  startAutoRefresh();
-}
+function renderBars(container,data,labelKey){container.replaceChildren();const max=Math.max(1,...data.map(item=>Number(item.requests)||0));for(const item of data){const wrap=document.createElement('div');wrap.className='bar-wrap';const value=Number(item.requests)||0,height=Math.max(value?5:2,Math.round((value/max)*130));wrap.innerHTML=`<span class="bar-value">${value}</span><div class="bar" style="height:${height}px" title="${value} requêtes"></div><span class="bar-label">${item[labelKey]}</span>`;container.appendChild(wrap);}}
+async function loadStats(){if(!token)return;if(!providerActionInProgress)errorBox.textContent='';try{const response=await fetch('/api/admin-stats',{headers:{authorization:`Bearer ${token}`},cache:'no-store'}),payload=await response.json().catch(()=>({}));if(!response.ok){if(response.status===401)throw new Error('Jeton administrateur incorrect.');if(payload.error==='ADMIN_NOT_CONFIGURED')throw new Error('Le jeton administrateur doit être configuré dans Cloudflare Pages.');throw new Error(`Erreur ${response.status}`);}sessionStorage.setItem('skytrace-admin-token',token);form.style.display='none';dashboard.style.display='block';setText('requests',payload.requests);setText('remaining',payload.remaining);setText('successes',payload.successes);setText('failures',payload.failures);setText('cache-hits',payload.cacheHits);setText('quota-blocked',payload.quotaBlocked);const progress=document.getElementById('quota-progress');progress.max=payload.dailyLimit||1000;progress.value=payload.adsbFiRequests||0;document.getElementById('quota-text').textContent=`${payload.primaryProvider||'adsb.fi'} : ${payload.percentUsed||0} % du budget SkyTrace journalier consommé · pause auto à ${payload.autoPausePercent||80} %.`;document.getElementById('details').textContent=`Jour UTC : ${payload.day} · Bascules de secours : ${payload.fallbackActivations||0} · Dernier service : ${payload.lastProvider||'—'} · Dernier statut : ${payload.lastStatus??'—'} · Stockage : ${payload.storage}`;document.getElementById('updated-at').textContent=`Actualisé : ${new Date().toLocaleTimeString('fr-FR')}`;renderProviders(payload.providers||[]);renderBars(hourlyChart,payload.hourly||[],'hour');renderBars(dailyChart,payload.history||[],'day');}catch(error){errorBox.textContent=error instanceof Error?error.message:String(error);if(String(errorBox.textContent).includes('incorrect')){sessionStorage.removeItem('skytrace-admin-token');dashboard.style.display='none';form.style.display='flex';}}}
+function startAutoRefresh(){clearInterval(autoRefreshTimer);autoRefreshTimer=setInterval(loadStats,60000);}
+form.addEventListener('submit',event=>{event.preventDefault();token=tokenInput.value;loadStats();startAutoRefresh();});
+refreshButton.addEventListener('click',loadStats);
+logoutButton.addEventListener('click',()=>{token='';sessionStorage.removeItem('skytrace-admin-token');dashboard.style.display='none';form.style.display='flex';tokenInput.value='';clearInterval(autoRefreshTimer);});
+if(token){tokenInput.value=token;loadStats();startAutoRefresh();}
