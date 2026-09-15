@@ -59,6 +59,27 @@ function normalizeAirLabsPayload(payload, centerLat, centerLon, radiusNm) {
   });
   return { ac };
 }
+function normalizeOpenSkyPayload(payload) {
+  if(!Array.isArray(payload?.states)) return null;
+  const nowSeconds=Date.now()/1000;
+  const ac=payload.states.filter(row => Array.isArray(row)&&row[0]&&number(row[6])!=null&&number(row[5])!=null).map(row => {
+    const lastContact=number(row[4]), altitudeMeters=number(row[7] ?? row[13]), velocityMs=number(row[9]);
+    return {
+      hex:String(row[0]).toLowerCase(),
+      flight:String(row[1]||'').trim(),
+      r:'', t:'',
+      lat:number(row[6]), lon:number(row[5]),
+      alt_baro:altitudeMeters!=null?altitudeMeters/0.3048:null,
+      gs:velocityMs!=null?velocityMs*1.943844:null,
+      track:number(row[10]),
+      baro_rate:number(row[11]),
+      squawk:row[14]||'',
+      seen_pos:lastContact!=null?Math.max(0,nowSeconds-lastContact):0,
+      on_ground:Boolean(row[8])
+    };
+  });
+  return { ac };
+}
 function providerUrl(provider, lat, lon, radius, env) {
   if(provider==='airlabs') {
     const key=String(env?.AIRLABS_API_KEY||'').trim(); if(!key) return null;
@@ -69,6 +90,11 @@ function providerUrl(provider, lat, lon, radius, env) {
       api_key:key
     });
     return `https://airlabs.co/api/v9/flights?${params}`;
+  }
+  if(provider==='opensky') {
+    const [lamin,lomin,lamax,lomax]=bboxForRadius(lat,lon,radius);
+    const params=new URLSearchParams({lamin:String(lamin),lomin:String(lomin),lamax:String(lamax),lomax:String(lomax)});
+    return `https://opensky-network.org/api/states/all?${params}`;
   }
   if(provider==='airplanes.live') return `https://api.airplanes.live/v2/point/${lat}/${lon}/${radius}`;
   if(provider==='adsb.fi') return `https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${radius}`;
@@ -82,12 +108,14 @@ async function fetchProvider(provider,lat,lon,radius,context,origin) {
   if(await providerCoolingDown(provider,origin)) return {ok:false,provider,status:503,reason:'COOLDOWN'};
   const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),UPSTREAM_TIMEOUT_MS), startedAt=Date.now();
   try {
-    const response=await fetch(upstreamUrl,{headers:{accept:'application/json','user-agent':'SkyTrace/2.2 (+https://skytrace-83z.pages.dev)'},signal:controller.signal});
+    const response=await fetch(upstreamUrl,{headers:{accept:'application/json','user-agent':'SkyTrace/2.3 (+https://skytrace-83z.pages.dev)'},signal:controller.signal});
     const payload=await response.json().catch(()=>null);
     context.waitUntil(recordUpstreamRequest(context.env,response.status,origin,provider));
     if(response.status===403||response.status===429) await setProviderCooldown(provider,origin,cooldownSecondsForStatus(response.status,response.headers.get('retry-after')),context);
     if(!response.ok) return {ok:false,provider,status:response.status,reason:'UPSTREAM_HTTP',retryAfter:response.headers.get('retry-after'),elapsedMs:Date.now()-startedAt};
-    const normalized=provider==='airlabs'?normalizeAirLabsPayload(payload,Number(lat),Number(lon),Number(radius)):normalizeAdsbPayload(payload);
+    const normalized=provider==='airlabs'
+      ? normalizeAirLabsPayload(payload,Number(lat),Number(lon),Number(radius))
+      : provider==='opensky' ? normalizeOpenSkyPayload(payload) : normalizeAdsbPayload(payload);
     if(!normalized) return {ok:false,provider,status:response.status,reason:'INVALID_PAYLOAD',elapsedMs:Date.now()-startedAt};
     return {ok:true,provider,status:response.status,payload:normalized,elapsedMs:Date.now()-startedAt};
   } catch(error) {
@@ -96,7 +124,7 @@ async function fetchProvider(provider,lat,lon,radius,context,origin) {
     return {ok:false,provider,status,reason:timedOut?'TIMEOUT':'NETWORK_ERROR',elapsedMs:Date.now()-startedAt};
   } finally { clearTimeout(timeout); }
 }
-function cacheKeys(origin,lat,lon,radius,detail) { const suffix=`${lat}:${lon}:${radius}:${detail?'detail':'broad'}`; return {fresh:new Request(`${origin}/__skytrace_aircraft_fresh/${suffix}`),stale:new Request(`${origin}/__skytrace_aircraft_stale/${suffix}`),kv:`aircraft-v4:${suffix}`}; }
+function cacheKeys(origin,lat,lon,radius,detail) { const suffix=`${lat}:${lon}:${radius}:${detail?'detail':'broad'}`; return {fresh:new Request(`${origin}/__skytrace_aircraft_fresh/${suffix}`),stale:new Request(`${origin}/__skytrace_aircraft_stale/${suffix}`),kv:`aircraft-v5:${suffix}`}; }
 async function readKv(env,key){if(!env?.SKYTRACE_STATS?.get)return null;try{return await env.SKYTRACE_STATS.get(key,{type:'json'});}catch{return null;}}
 async function writeKv(env,key,body,provider){if(!env?.SKYTRACE_STATS?.put)return;await env.SKYTRACE_STATS.put(key,JSON.stringify({body,provider,savedAt:new Date().toISOString()}),{expirationTtl:KV_TTL_SECONDS});}
 function cachedResponse(body,provider,cacheState){return new Response(body,{status:200,headers:{'content-type':'application/json; charset=utf-8','cache-control':'public, max-age=15, stale-while-revalidate=120','x-skytrace-cache':cacheState,'x-skytrace-provider':provider||'cache'}});}
@@ -109,9 +137,9 @@ export async function onRequestGet(context) {
   const stale=await cache.match(keys.stale),kvStale=stale?null:await readKv(context.env,keys.kv);
   if(!(await consumeClientRateLimit(context.request,url.origin))){if(stale)return cachedResponse(await stale.text(),stale.headers.get('x-skytrace-provider'),'STALE-RATE-LIMIT');if(kvStale?.body)return cachedResponse(kvStale.body,kvStale.provider,'KV-STALE-RATE-LIMIT');return json({error:'RATE_LIMITED'},429,{'retry-after':'60'});}
 
-  // AirLabs is currently the known-good source on the production Cloudflare deployment.
-  // Free ADS-B sources remain automatic fallbacks and are cooled down on 403/429.
-  const providerOrder=['airlabs','adsb.fi','adsb.lol','airplanes.live'];
+  // AirLabs stays first while it is configured. If it returns a valid but empty area,
+  // OpenSky supplies hobby-use state vectors before the providers currently blocked by 403.
+  const providerOrder=['airlabs','opensky','adsb.fi','adsb.lol','airplanes.live'];
   const attempts=[]; let emptyResult=null,result=null;
   for(const provider of providerOrder){
     const attempt=await fetchProvider(provider,lat,lon,radius,context,url.origin);
