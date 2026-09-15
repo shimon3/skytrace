@@ -1,26 +1,24 @@
 const CONTROL_TTL_SECONDS = 7 * 24 * 60 * 60;
-const PROVIDERS = ['adsb.fi', 'adsb.lol', 'airplanes.live', 'opensky', 'airlabs', 'planespotters.net'];
+const PROVIDERS = ['adsb.fi', 'adsb.lol', 'opensky', 'airlabs'];
 
 // These are SkyTrace safety budgets, not claims about the providers' official quotas.
 const DEFAULT_DAILY_BUDGETS = {
   'adsb.fi': 1000,
   'adsb.lol': 500,
-  'airplanes.live': 500,
   opensky: 300,
   airlabs: 100,
-  'planespotters.net': 500,
 };
 const BUDGET_ENV_KEYS = {
-  'adsb.fi': 'ADSB_FI_DAILY_BUDGET', 'adsb.lol': 'ADSB_LOL_DAILY_BUDGET',
-  'airplanes.live': 'AIRPLANES_LIVE_DAILY_BUDGET', opensky: 'OPENSKY_DAILY_BUDGET',
-  airlabs: 'AIRLABS_DAILY_BUDGET', 'planespotters.net': 'PLANESPOTTERS_DAILY_BUDGET',
+  'adsb.fi': 'ADSB_FI_DAILY_BUDGET',
+  'adsb.lol': 'ADSB_LOL_DAILY_BUDGET',
+  opensky: 'OPENSKY_DAILY_BUDGET',
+  airlabs: 'AIRLABS_DAILY_BUDGET',
 };
 function storageKey(provider){return `provider-control:${provider}`;}
 function fallbackRequest(provider,origin='https://skytrace.internal'){return new Request(`${origin}/__private_provider_control/${encodeURIComponent(provider)}`);}
 function normalizeControl(provider,stored){const base={provider,enabled:true,pausedUntil:null,pauseReason:null,updatedAt:null};if(!stored||typeof stored!=='object')return base;const pausedUntil=stored.pausedUntil||null,timedPauseActive=pausedUntil?Date.parse(pausedUntil)>Date.now():false,paused=pausedUntil?timedPauseActive:stored.enabled===false;return {...base,...stored,enabled:!paused,pausedUntil:paused?pausedUntil:null,pauseReason:paused?stored.pauseReason||null:null};}
 function providerAccessAvailable(env,provider){
-  // Public anonymous access is supported for the OpenSky state-vector endpoint.
-  if(provider==='opensky'||provider==='airplanes.live') return true;
+  if(provider==='opensky') return true;
   if(provider==='airlabs') return Boolean(String(env?.AIRLABS_API_KEY||'').trim());
   return true;
 }
