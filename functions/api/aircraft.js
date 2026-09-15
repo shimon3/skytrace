@@ -1,9 +1,5 @@
 import { providerEnabled } from '../lib/provider-controls.js';
-import {
-  cooldownSecondsForStatus,
-  providerCoolingDown,
-  setProviderCooldown,
-} from '../lib/provider-cooldown.js';
+import { cooldownSecondsForStatus, providerCoolingDown, setProviderCooldown } from '../lib/provider-cooldown.js';
 import { recordUpstreamRequest } from '../lib/stats.js';
 
 const FRESH_TTL_SECONDS = 45;
@@ -35,23 +31,43 @@ function normalizeAdsbPayload(payload) {
   const ac = Array.isArray(payload?.ac) ? payload.ac : Array.isArray(payload?.aircraft) ? payload.aircraft : null;
   return ac ? { ac } : null;
 }
+function airLabsRows(payload) {
+  if (Array.isArray(payload?.response)) return payload.response;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload)) return payload;
+  return null;
+}
 function normalizeAirLabsPayload(payload, centerLat, centerLon, radiusNm) {
-  const rows = Array.isArray(payload?.response) ? payload.response : Array.isArray(payload) ? payload : null;
+  const rows = airLabsRows(payload);
   if (!rows) return null;
   const nowSeconds=Date.now()/1000;
   const ac=rows.filter(item => {
     const lat=number(item?.lat), lon=number(item?.lng ?? item?.lon);
-    return item?.hex && lat != null && lon != null && haversineNm(centerLat,centerLon,lat,lon)<=radiusNm*1.15;
+    return item?.hex && lat != null && lon != null && haversineNm(centerLat,centerLon,lat,lon)<=radiusNm*1.2;
   }).map(item => {
     const updated=number(item.updated), altitudeMeters=number(item.alt), speedKmh=number(item.speed);
-    return { hex:String(item.hex).toLowerCase(), flight:item.flight_iata||item.flight_icao||'', r:item.reg_number||'', t:item.aircraft_icao||'', lat:number(item.lat), lon:number(item.lng ?? item.lon), alt_baro:altitudeMeters!=null?altitudeMeters/0.3048:null, gs:speedKmh!=null?speedKmh/1.852:null, track:number(item.dir), squawk:item.squawk||'', seen_pos:updated!=null?Math.max(0,nowSeconds-updated):0 };
+    return {
+      hex:String(item.hex).toLowerCase(),
+      flight:item.flight_iata||item.flight_icao||item.flight_number||'',
+      r:item.reg_number||'', t:item.aircraft_icao||'',
+      lat:number(item.lat), lon:number(item.lng ?? item.lon),
+      alt_baro:altitudeMeters!=null?altitudeMeters/0.3048:null,
+      gs:speedKmh!=null?speedKmh/1.852:null,
+      track:number(item.dir), squawk:item.squawk||'',
+      seen_pos:updated!=null?Math.max(0,nowSeconds-updated):0
+    };
   });
   return { ac };
 }
 function providerUrl(provider, lat, lon, radius, env) {
   if(provider==='airlabs') {
     const key=String(env?.AIRLABS_API_KEY||'').trim(); if(!key) return null;
-    const params=new URLSearchParams({bbox:bboxForRadius(lat,lon,radius).join(','),_fields:'hex,reg_number,flight_iata,flight_icao,lat,lng,alt,dir,speed,squawk,aircraft_icao,updated',api_key:key});
+    const params=new URLSearchParams({
+      bbox:bboxForRadius(lat,lon,radius).join(','),
+      _view:'object',
+      _fields:'hex,reg_number,flight_number,flight_iata,flight_icao,airline_iata,airline_icao,lat,lng,alt,dir,speed,squawk,aircraft_icao,dep_iata,arr_iata,updated,status',
+      api_key:key
+    });
     return `https://airlabs.co/api/v9/flights?${params}`;
   }
   if(provider==='airplanes.live') return `https://api.airplanes.live/v2/point/${lat}/${lon}/${radius}`;
@@ -66,7 +82,7 @@ async function fetchProvider(provider,lat,lon,radius,context,origin) {
   if(await providerCoolingDown(provider,origin)) return {ok:false,provider,status:503,reason:'COOLDOWN'};
   const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),UPSTREAM_TIMEOUT_MS), startedAt=Date.now();
   try {
-    const response=await fetch(upstreamUrl,{headers:{accept:'application/json','user-agent':'SkyTrace/2.1 (+https://skytrace-83z.pages.dev)'},signal:controller.signal});
+    const response=await fetch(upstreamUrl,{headers:{accept:'application/json','user-agent':'SkyTrace/2.2 (+https://skytrace-83z.pages.dev)'},signal:controller.signal});
     const payload=await response.json().catch(()=>null);
     context.waitUntil(recordUpstreamRequest(context.env,response.status,origin,provider));
     if(response.status===403||response.status===429) await setProviderCooldown(provider,origin,cooldownSecondsForStatus(response.status,response.headers.get('retry-after')),context);
@@ -80,7 +96,7 @@ async function fetchProvider(provider,lat,lon,radius,context,origin) {
     return {ok:false,provider,status,reason:timedOut?'TIMEOUT':'NETWORK_ERROR',elapsedMs:Date.now()-startedAt};
   } finally { clearTimeout(timeout); }
 }
-function cacheKeys(origin,lat,lon,radius,detail) { const suffix=`${lat}:${lon}:${radius}:${detail?'detail':'broad'}`; return {fresh:new Request(`${origin}/__skytrace_aircraft_fresh/${suffix}`),stale:new Request(`${origin}/__skytrace_aircraft_stale/${suffix}`),kv:`aircraft-v3:${suffix}`}; }
+function cacheKeys(origin,lat,lon,radius,detail) { const suffix=`${lat}:${lon}:${radius}:${detail?'detail':'broad'}`; return {fresh:new Request(`${origin}/__skytrace_aircraft_fresh/${suffix}`),stale:new Request(`${origin}/__skytrace_aircraft_stale/${suffix}`),kv:`aircraft-v4:${suffix}`}; }
 async function readKv(env,key){if(!env?.SKYTRACE_STATS?.get)return null;try{return await env.SKYTRACE_STATS.get(key,{type:'json'});}catch{return null;}}
 async function writeKv(env,key,body,provider){if(!env?.SKYTRACE_STATS?.put)return;await env.SKYTRACE_STATS.put(key,JSON.stringify({body,provider,savedAt:new Date().toISOString()}),{expirationTtl:KV_TTL_SECONDS});}
 function cachedResponse(body,provider,cacheState){return new Response(body,{status:200,headers:{'content-type':'application/json; charset=utf-8','cache-control':'public, max-age=15, stale-while-revalidate=120','x-skytrace-cache':cacheState,'x-skytrace-provider':provider||'cache'}});}
@@ -92,15 +108,26 @@ export async function onRequestGet(context) {
   const fresh=await cache.match(keys.fresh); if(fresh)return cachedResponse(await fresh.text(),fresh.headers.get('x-skytrace-provider'),'HIT');
   const stale=await cache.match(keys.stale),kvStale=stale?null:await readKv(context.env,keys.kv);
   if(!(await consumeClientRateLimit(context.request,url.origin))){if(stale)return cachedResponse(await stale.text(),stale.headers.get('x-skytrace-provider'),'STALE-RATE-LIMIT');if(kvStale?.body)return cachedResponse(kvStale.body,kvStale.provider,'KV-STALE-RATE-LIMIT');return json({error:'RATE_LIMITED'},429,{'retry-after':'60'});}
-  // Prefer the free live ADS-B providers. AirLabs remains a reliable keyed fallback.
-  const providerOrder=['airplanes.live','adsb.fi','adsb.lol','airlabs'];
+
+  // AirLabs is currently the known-good source on the production Cloudflare deployment.
+  // Free ADS-B sources remain automatic fallbacks and are cooled down on 403/429.
+  const providerOrder=['airlabs','adsb.fi','adsb.lol','airplanes.live'];
   const attempts=[]; let emptyResult=null,result=null;
-  for(const provider of providerOrder){const attempt=await fetchProvider(provider,lat,lon,radius,context,url.origin);attempts.push(attempt);if(!attempt.ok)continue;if(attempt.payload.ac.length>0){result=attempt;break;}if(!emptyResult)emptyResult=attempt;}
+  for(const provider of providerOrder){
+    const attempt=await fetchProvider(provider,lat,lon,radius,context,url.origin);
+    attempts.push(attempt);
+    if(!attempt.ok)continue;
+    if(attempt.payload.ac.length>0){result=attempt;break;}
+    if(!emptyResult)emptyResult=attempt;
+  }
   result ||= emptyResult;
   if(!result){if(stale)return cachedResponse(await stale.text(),stale.headers.get('x-skytrace-provider'),'STALE');if(kvStale?.body)return cachedResponse(kvStale.body,kvStale.provider,'KV-STALE');return json({error:'DATA_TEMPORARILY_UNAVAILABLE',message:'Aucun fournisseur de positions live n’est disponible pour le moment.',providers:attempts.map(({provider,ok,status,reason,elapsedMs})=>({provider,ok,status,reason,elapsedMs}))},502);}
   const body=JSON.stringify(result.payload),hasAircraft=result.payload.ac.length>0,freshTtl=hasAircraft?FRESH_TTL_SECONDS:EMPTY_TTL_SECONDS;
-  const freshResponse=new Response(body,{headers:{'content-type':'application/json; charset=utf-8','cache-control':`public, max-age=${freshTtl}`,'x-skytrace-provider':result.provider}});
+  const freshResponse=new Response(body,{headers:{'content-type':'application/json; charset=utf-8','cache-control':`public, max-age=${freshTtl}`,'x-skytrace-provider':result.provider,'x-skytrace-aircraft-count':String(result.payload.ac.length)}});
   const writes=[cache.put(keys.fresh,freshResponse)];
   if(hasAircraft){writes.push(cache.put(keys.stale,new Response(body,{headers:{'content-type':'application/json; charset=utf-8','cache-control':`public, max-age=${STALE_TTL_SECONDS}`,'x-skytrace-provider':result.provider}})));writes.push(writeKv(context.env,keys.kv,body,result.provider));}
-  context.waitUntil(Promise.all(writes)); return cachedResponse(body,result.provider,'MISS');
+  context.waitUntil(Promise.all(writes));
+  const response=cachedResponse(body,result.provider,'MISS');
+  response.headers.set('x-skytrace-aircraft-count',String(result.payload.ac.length));
+  return response;
 }
