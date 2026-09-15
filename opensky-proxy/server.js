@@ -1,6 +1,7 @@
 import http from 'node:http';
 import statesHandler from './api/states.js';
 import healthHandler from './api/health.js';
+import networkTestHandler from './api/network-test.js';
 
 function adaptResponse(res) {
   res.status = (code) => { res.statusCode = code; return res; };
@@ -18,8 +19,9 @@ const server = http.createServer(async (req, rawRes) => {
   req.query = Object.fromEntries(url.searchParams.entries());
   try {
     if (url.pathname === '/api/health') return await healthHandler(req, res);
+    if (url.pathname === '/api/network-test') return await networkTestHandler(req, res);
     if (url.pathname === '/api/states') return await statesHandler(req, res);
-    return res.status(200).json({ ok: true, service: 'skytrace-opensky-proxy', endpoints: ['/api/health', '/api/states'] });
+    return res.status(200).json({ ok: true, service: 'skytrace-opensky-proxy', endpoints: ['/api/health', '/api/network-test', '/api/states'] });
   } catch (error) {
     console.error(error);
     if (!res.headersSent) return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
