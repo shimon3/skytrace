@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/states.js": {
+      "maxDuration": 20
+    }
+  }
+}
