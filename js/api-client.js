@@ -135,17 +135,11 @@ export function viewportPoints(map, fallbackPoint) {
     (a, b) => pointDistanceSquared(a, center) - pointDistanceSquared(b, center)
   );
 
-  const limit = lowZoomLimit(zoom);
-  if (ordered.length <= limit) return ordered;
-
-  const selected = [ordered[0]];
-  const rest = ordered.slice(1);
-  const wanted = limit - 1;
-  const stride = rest.length / wanted;
-  for (let index = 0; index < wanted; index += 1) {
-    selected.push(rest[Math.min(rest.length - 1, Math.floor(index * stride))]);
-  }
-  return selected;
+  // Do not sample away visible geographic cells. Each request only covers 250 NM;
+  // selecting a subset creates deterministic holes in continent views.
+  // Cap only as a safety guard for pathological/world-size bounds.
+  const limit = Math.max(lowZoomLimit(zoom), 24);
+  return ordered.slice(0, limit);
 }
 
 function cacheDurationForZoom(zoom) {
