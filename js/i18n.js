@@ -41,7 +41,7 @@ const translations = {
     legend_mid: 'Moyenne altitude',
     legend_low: 'Décollage/atterrissage',
     attribution:
-      'Données: airplanes.live · Photos: planespotters.net · Les positions entre deux mises à jour sont estimées',
+      'Données live : AirLabs / OpenSky / adsb.lol / adsb.fi · Photos : Planespotters.net · Les positions entre deux mises à jour sont estimées',
     map_dark: 'Sombre',
     map_satellite: 'Satellite',
     map_colored: 'Coloré',
@@ -90,7 +90,7 @@ const translations = {
     legend_mid: 'Mid altitude',
     legend_low: 'Takeoff/landing',
     attribution:
-      'Data: airplanes.live · Photos: planespotters.net · Positions between updates are estimated',
+      'Live data: AirLabs / OpenSky / adsb.lol / adsb.fi · Photos: Planespotters.net · Positions between updates are estimated',
     map_dark: 'Dark',
     map_satellite: 'Satellite',
     map_colored: 'Colorful',
@@ -139,7 +139,7 @@ const translations = {
     legend_mid: 'גובה בינוני',
     legend_low: 'המראה/נחיתה',
     attribution:
-      'נתונים: airplanes.live · תמונות: planespotters.net · המיקומים בין עדכונים הם הערכה',
+      'נתונים חיים: AirLabs / OpenSky / adsb.lol / adsb.fi · תמונות: Planespotters.net · המיקומים בין עדכונים הם הערכה',
     map_dark: 'כהה',
     map_satellite: 'לוויין',
     map_colored: 'צבעוני',
