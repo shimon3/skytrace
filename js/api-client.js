@@ -11,7 +11,7 @@ const MIN_NETWORK_SPACING_MS = 1100;
 // Positions do not need a full viewport rescan every few minutes. Keep populated
 // tiles for 8–12 minutes depending on zoom; interpolation keeps movement smooth.
 const DEFAULT_TILE_CACHE_MS = 720000;
-const EMPTY_TILE_CACHE_MS = 120000;
+const EMPTY_TILE_CACHE_MS = 240000;
 const PERSISTED_TILE_MAX_AGE_MS = 900000;
 const PERSISTED_TILE_PREFIX = 'skytrace_aircraft_tile_v1:';
 // The backend can legitimately need time to skip a paused provider and try a fallback.
