@@ -172,6 +172,13 @@ export class AircraftApiClient {
     return Date.now() >= this.#backoffUntil;
   }
 
+  invalidateViewport() {
+    // Make any viewport load already in progress obsolete. In-flight HTTP may
+    // finish, but its result will no longer be merged and the tile loop stops.
+    this.#viewportGeneration += 1;
+    this.#lastCoverageComplete = false;
+  }
+
   #tileKey(point) {
     return `${point.lat.toFixed(2)}:${point.lon.toFixed(2)}:${RADIUS_NM}`;
   }
