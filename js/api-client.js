@@ -303,7 +303,12 @@ export class AircraftApiClient {
       if (typeof onPartial === 'function') onPartial([...deduplicated.values()]);
     };
 
-    const centerPoint = points[0] || point;
+    // Fetch the actual map center first. viewportPoints() is distance-sorted, but
+    // relying on points[0] made coverage fragile when grid/deduping changed.
+    const centerPoint = {
+      lat: Number(clamp(point.lat, -85, 85).toFixed(2)),
+      lon: Number(wrapLongitude(point.lon).toFixed(2)),
+    };
     try {
       const centerAircraft = await this.#fetchTile(centerPoint, cacheDurationMs, detailed);
       if (generation !== this.#viewportGeneration) return [];
@@ -313,7 +318,9 @@ export class AircraftApiClient {
       console.error('Viewport center tile failed:', error);
     }
 
-    const remaining = points.slice(1);
+    const remaining = points.filter(
+      (tilePoint) => tilePoint.lat !== centerPoint.lat || tilePoint.lon !== centerPoint.lon
+    );
 
     const fillViewport = async () => {
       let cursor = 0;
