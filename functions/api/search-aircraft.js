@@ -31,7 +31,7 @@ const PROVIDERS = {
 
 const PROVIDER_ORDER = ['adsb.fi', 'adsb.lol', 'airplanes.live'];
 const CACHE_SECONDS = 30;
-const NEGATIVE_CACHE_SECONDS = 15;
+const NEGATIVE_CACHE_SECONDS = 60;
 const TIMEOUT_MS = 5000;
 
 function json(payload, status = 200, extraHeaders = {}) {
