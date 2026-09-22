@@ -14,7 +14,7 @@ function json(payload,status=200,headers={}){return new Response(JSON.stringify(
 function number(value){const parsed=Number(value);return Number.isFinite(parsed)?parsed:null;}
 function clamp(value,min,max){return Math.max(min,Math.min(max,value));}
 function bucket(value){return Math.round(value*2)/2;}
-function bboxForRadius(lat,lon,radiusNm){const latDelta=radiusNm/60,cos=Math.max(.2,Math.cos((lat*Math.PI)/180)),lonDelta=radiusNm/(60*cos);return [clamp(lat-latDelta,-85,85),clamp(lon-lonDelta,-180,180),clamp(lat+latDelta,-85,85),clamp(lon+lonDelta,-180,180)].map(v=>Number(v.toFixed(3)));}
+function bboxForRadius(lat,lon,radiusNm){lat=Number(lat);lon=Number(lon);radiusNm=Number(radiusNm);const latDelta=radiusNm/60,cos=Math.max(.2,Math.cos((lat*Math.PI)/180)),lonDelta=radiusNm/(60*cos);return [clamp(lat-latDelta,-85,85),clamp(lon-lonDelta,-180,180),clamp(lat+latDelta,-85,85),clamp(lon+lonDelta,-180,180)].map(v=>Number(v.toFixed(3)));}
 function haversineNm(lat1,lon1,lat2,lon2){const toRad=v=>(v*Math.PI)/180,dLat=toRad(lat2-lat1),dLon=toRad(lon2-lon1),a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;return 3440.065*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
 function normalizeAdsbPayload(payload){const ac=Array.isArray(payload?.ac)?payload.ac:Array.isArray(payload?.aircraft)?payload.aircraft:null;return ac?{ac}:null;}
 function airLabsRows(payload){if(Array.isArray(payload?.response))return payload.response;if(Array.isArray(payload?.data))return payload.data;if(Array.isArray(payload))return payload;return null;}
