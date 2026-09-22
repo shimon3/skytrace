@@ -3,7 +3,9 @@ import { normalizeAircraft } from './flight-utils.js';
 const AIRCRAFT_API = '/api/aircraft';
 const PHOTO_API = '/api/photo';
 const RADIUS_NM = 250;
-const GRID_STEP_LAT = 5.2;
+// 250 NM circular tiles can safely use up to ~5.89° center spacing at the equator
+// without diagonal coverage gaps. 5.8° cuts redundant overlap while preserving coverage.
+const GRID_STEP_LAT = 5.8;
 const MAX_CONCURRENCY = 1;
 const MIN_NETWORK_SPACING_MS = 1100;
 const DEFAULT_TILE_CACHE_MS = 300000;
@@ -62,17 +64,6 @@ function writePersistedTile(key, entry) {
   } catch {
     // Storage is only a refresh-resilience optimization. Ignore quota/privacy failures.
   }
-}
-
-function lowZoomLimit(zoom) {
-  // Wide continent views need enough 250 NM tiles to cover the visible map.
-  // The previous 4-tile cap at zoom 5 left large holes (notably France in the Europe view).
-  if (zoom <= 3) return 6;
-  if (zoom === 4) return 8;
-  if (zoom === 5) return 10;
-  if (zoom === 6) return 10;
-  if (zoom === 7) return 10;
-  return 12;
 }
 
 function gridCenters(min, max, step) {
