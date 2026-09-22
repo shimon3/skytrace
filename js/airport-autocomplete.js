@@ -2,8 +2,7 @@ import { AIRPORTS } from '../data/airports.js';
 
 const HISTORY_KEY = 'skytrace_search_history_v1';
 const MAX_SUGGESTIONS = 3;
-const REMOTE_AIRPORTS_URL =
-  'https://raw.githubusercontent.com/brandonhimpfen/airports/f2ad335955ca98fb99a80166a172c15f0bf941f5/data/airports.json';
+const REMOTE_AIRPORTS_URL = null;
 
 const EXTRA_AIRPORTS = [
   { code: 'LYS', city: 'Lyon', name: 'Lyon Saint-Exupéry', lat: 45.7256, lon: 5.0811 },
@@ -74,33 +73,11 @@ let catalog = LOCAL_CATALOG;
 let remoteCatalogPromise = null;
 
 async function loadWorldwideCatalog() {
-  if (remoteCatalogPromise) return remoteCatalogPromise;
-  remoteCatalogPromise = fetch(REMOTE_AIRPORTS_URL, {
-    headers: { accept: 'application/json' },
-    cache: 'force-cache',
-  })
-    .then((response) => {
-      if (!response.ok) throw new Error(`Airport catalog HTTP ${response.status}`);
-      return response.json();
-    })
-    .then((rows) => {
-      const worldwide = (Array.isArray(rows) ? rows : [])
-        .filter((row) => row?.code_type === 'iata' && /^[A-Za-z]{3}$/.test(String(row?.code || '')))
-        .map((row) => ({
-          code: String(row.code).toUpperCase(),
-          city: deriveCity(row.name),
-          name: row.name,
-          lat: Number(row.latitude),
-          lon: Number(row.longitude),
-        }));
-      catalog = dedupeCatalog([...worldwide, ...LOCAL_CATALOG]);
-      return catalog;
-    })
-    .catch((error) => {
-      console.warn('Worldwide airport catalog unavailable, using local fallback:', error);
-      return catalog;
-    });
-  return remoteCatalogPromise;
+  // Keep autocomplete local and instant. The previous remote GitHub catalog
+  // created a third-party request for airport suggestions and conflicted with
+  // the site's strict CSP. The bundled catalog plus curated additions is the
+  // deterministic source; server-side route search still handles live routes.
+  return catalog;
 }
 
 function airportMatches(raw, source = catalog) {
