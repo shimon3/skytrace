@@ -65,11 +65,14 @@ function writePersistedTile(key, entry) {
 }
 
 function lowZoomLimit(zoom) {
-  if (zoom <= 3) return 3;
-  if (zoom <= 5) return 4;
-  if (zoom === 6) return 6;
-  if (zoom === 7) return 8;
-  return 10;
+  // Wide continent views need enough 250 NM tiles to cover the visible map.
+  // The previous 4-tile cap at zoom 5 left large holes (notably France in the Europe view).
+  if (zoom <= 3) return 6;
+  if (zoom === 4) return 8;
+  if (zoom === 5) return 10;
+  if (zoom === 6) return 10;
+  if (zoom === 7) return 10;
+  return 12;
 }
 
 function gridCenters(min, max, step) {
