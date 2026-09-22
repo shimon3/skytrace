@@ -272,6 +272,3 @@ document.addEventListener('pointerdown', (event) => {
   }
 });
 
-if ('requestIdleCallback' in window) {
-  window.requestIdleCallback(() => void loadWorldwideCatalog(), { timeout: 8000 });
-}
