@@ -311,7 +311,12 @@ map.on('click', (e) => {
 });
 map.on('moveend', () => {
   updateZoneLabel();
-  if (!followEnabled) scheduleViewportRefresh();
+  if (!followEnabled) {
+    // Do not let a slow multi-tile request for the previous region block the
+    // newly visible viewport (for example Middle East -> Europe).
+    api.invalidateViewport();
+    scheduleViewportRefresh();
+  }
 });
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
