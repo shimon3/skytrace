@@ -8,9 +8,11 @@ const RADIUS_NM = 250;
 const GRID_STEP_LAT = 5.8;
 const MAX_CONCURRENCY = 1;
 const MIN_NETWORK_SPACING_MS = 1100;
-const DEFAULT_TILE_CACHE_MS = 300000;
-const EMPTY_TILE_CACHE_MS = 5000;
-const PERSISTED_TILE_MAX_AGE_MS = 600000;
+// Positions do not need a full viewport rescan every few minutes. Keep populated
+// tiles for 8–12 minutes depending on zoom; interpolation keeps movement smooth.
+const DEFAULT_TILE_CACHE_MS = 720000;
+const EMPTY_TILE_CACHE_MS = 120000;
+const PERSISTED_TILE_MAX_AGE_MS = 900000;
 const PERSISTED_TILE_PREFIX = 'skytrace_aircraft_tile_v1:';
 // The backend can legitimately need time to skip a paused provider and try a fallback.
 // Keep this comfortably above the backend's per-provider timeout.
@@ -133,8 +135,8 @@ export function viewportPoints(map, fallbackPoint) {
 }
 
 function cacheDurationForZoom(zoom) {
-  if (zoom >= 8) return 180000;
-  if (zoom >= 6) return 240000;
+  if (zoom >= 8) return 480000;
+  if (zoom >= 6) return 600000;
   return DEFAULT_TILE_CACHE_MS;
 }
 
