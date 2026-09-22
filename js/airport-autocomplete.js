@@ -209,8 +209,14 @@ function bindInlineButtons(box, input) {
     button.addEventListener('click', () => {
       input.value = button.dataset.airportCode;
       closeInlineSuggestions();
-      const otherId = input.id === 'route-from' ? 'route-to' : 'route-from';
-      document.getElementById(otherId)?.focus();
+      // Selecting the departure should advance to arrival. Selecting the
+      // arrival is the end of the two-field flow: keep both values and close
+      // suggestions instead of reopening the departure autocomplete.
+      if (input.id === 'route-from') {
+        document.getElementById('route-to')?.focus();
+      } else {
+        input.blur();
+      }
     });
   });
 }
