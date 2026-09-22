@@ -32,4 +32,16 @@ export async function readProviderControl(env,provider,origin){if(!isKnownProvid
 export async function readAllProviderControls(env,origin){return Promise.all(PROVIDERS.map(provider=>readProviderControl(env,provider,origin)));}
 export async function writeProviderControl(env,provider,value,origin){if(!isKnownProvider(provider))throw new Error('UNKNOWN_PROVIDER');const control={provider,enabled:value.enabled!==false,pausedUntil:value.pausedUntil||null,pauseReason:value.pauseReason||null,updatedAt:new Date().toISOString()};if(env?.SKYTRACE_STATS?.put)await env.SKYTRACE_STATS.put(storageKey(provider),JSON.stringify(control),{expirationTtl:CONTROL_TTL_SECONDS});else await caches.default.put(fallbackRequest(provider,origin),new Response(JSON.stringify(control),{headers:{'content-type':'application/json; charset=utf-8','cache-control':`public, max-age=${CONTROL_TTL_SECONDS}`}}));return readProviderControl(env,provider,origin);}
 export async function autoPauseProvider(env,provider,origin,reason,options={}){if(!isKnownProvider(provider))return null;const seconds=Number(options.seconds),pausedUntil=Number.isFinite(seconds)&&seconds>0?new Date(Date.now()+Math.min(seconds,24*60*60)*1000).toISOString():nextUtcMidnightIso();return writeProviderControl(env,provider,{enabled:false,pausedUntil,pauseReason:reason||'AUTO_PAUSE'},origin);}
-export async function providerEnabled(env,provider,origin){return (await readProviderControl(env,provider,origin)).enabled;}
+export async function providerEnabled(env,provider,origin){
+  const control=await readProviderControl(env,provider,origin);
+
+  // SAFETY_BUDGET was a conservative SkyTrace-local guard. AirLabs remains
+  // protected by real upstream 403/429 handling, so a stale budget pause must
+  // not make the only healthy live-position source unavailable until midnight.
+  if(provider==='airlabs'&&control.enabled===false&&control.pauseReason==='SAFETY_BUDGET'){
+    await writeProviderControl(env,provider,{enabled:true,pausedUntil:null,pauseReason:null},origin);
+    return true;
+  }
+
+  return control.enabled;
+}
