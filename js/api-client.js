@@ -135,11 +135,10 @@ export function viewportPoints(map, fallbackPoint) {
     (a, b) => pointDistanceSquared(a, center) - pointDistanceSquared(b, center)
   );
 
-  // Do not sample away visible geographic cells. Each request only covers 250 NM;
-  // selecting a subset creates deterministic holes in continent views.
-  // Cap only as a safety guard for pathological/world-size bounds.
-  const limit = Math.max(lowZoomLimit(zoom), 24);
-  return ordered.slice(0, limit);
+  // Every generated center represents part of the currently visible viewport.
+  // Dropping centers here creates geographic holes. The grid itself bounds the
+  // request count, so return the complete visible set.
+  return ordered;
 }
 
 function cacheDurationForZoom(zoom) {
