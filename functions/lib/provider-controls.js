@@ -1,18 +1,22 @@
 const CONTROL_TTL_SECONDS = 7 * 24 * 60 * 60;
-const PROVIDERS = ['adsb.fi', 'adsb.lol', 'opensky', 'airlabs'];
+const PROVIDERS = ['adsb.fi', 'adsb.lol', 'airplanes.live', 'opensky', 'airlabs', 'planespotters.net'];
 
 // These are SkyTrace safety budgets, not claims about the providers' official quotas.
 const DEFAULT_DAILY_BUDGETS = {
   'adsb.fi': 1000,
   'adsb.lol': 500,
+  'airplanes.live': 500,
   opensky: 300,
   airlabs: 100,
+  'planespotters.net': 500,
 };
 const BUDGET_ENV_KEYS = {
   'adsb.fi': 'ADSB_FI_DAILY_BUDGET',
   'adsb.lol': 'ADSB_LOL_DAILY_BUDGET',
+  'airplanes.live': 'AIRPLANES_LIVE_DAILY_BUDGET',
   opensky: 'OPENSKY_DAILY_BUDGET',
   airlabs: 'AIRLABS_DAILY_BUDGET',
+  'planespotters.net': 'PLANESPOTTERS_DAILY_BUDGET',
 };
 function storageKey(provider){return `provider-control:${provider}`;}
 function fallbackRequest(provider,origin='https://skytrace.internal'){return new Request(`${origin}/__private_provider_control/${encodeURIComponent(provider)}`);}
