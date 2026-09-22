@@ -155,6 +155,7 @@ async function resolveFlight(apiKey, callsign, registration, context) {
     );
     if (flight) return flight;
   }
+  if (!registration) return null;
   const liveFlight = await attempt(
     requestLiveFlightByRegistration(apiKey, registration, context),
     `live reg_number=${registration}`
