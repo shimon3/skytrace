@@ -5,7 +5,10 @@ import { applyLanguage, getLanguage, t } from './js/i18n.js';
 import { createMapView } from './js/map-view.js';
 
 const RADIUS_NM = 250;
-const TICK_MS = 180000;
+// A full viewport refresh is expensive (multiple 250 NM tiles). Ten minutes is
+// enough for background coverage refresh; individual tracked flights use their
+// dedicated 30 s search poller.
+const TICK_MS = 600000;
 const STALE_MS = 600000;
 const MOVE_DEBOUNCE_MS = 180;
 const INITIAL_RETRY_DELAYS_MS = [1000, 2500, 5000, 10000, 20000, 30000];
