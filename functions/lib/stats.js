@@ -200,7 +200,12 @@ export async function recordProviderRequest(env, status, origin, provider = 'unk
     const budget = getProviderDailyBudget(env, provider);
     const percent = providerUsagePercent(providerStats.requests, budget);
     const threshold = getAutoPausePercent(env);
-    if (percent >= threshold) {
+
+    // AirLabs is currently the only healthy live-position source in production.
+    // Do not globally disable it merely because SkyTrace's conservative local
+    // safety budget was reached. Real upstream 403/429 responses are still
+    // handled above and will pause the provider normally.
+    if (provider !== 'airlabs' && percent >= threshold) {
       await autoPauseProvider(env, provider, origin, 'SAFETY_BUDGET');
     }
   }
