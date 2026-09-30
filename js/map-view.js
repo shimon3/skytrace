@@ -1,4 +1,4 @@
-import { t } from './i18n.js';
+import { getLanguage, t } from './i18n.js';
 
 function colorForAltitude(altitude) {
   if (altitude == null) return '#7c8aa3';
@@ -100,7 +100,7 @@ const PlaneLayer = L.Layer.extend({
   },
 });
 
-export function createMapView() {
+export function createMapView({ mapTilerKey = '' } = {}) {
   const map = L.map('map', {
     zoomControl: false,
     attributionControl: true,
@@ -130,11 +130,27 @@ export function createMapView() {
     { maxZoom: 19, attribution: esriAttribution }
   );
 
-  // The colored OpenStreetMap layer is the default basemap shown on first load.
-  const colored = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: osmAttribution,
-  }).addTo(map);
+  const languageForMap = () => {
+    if (!L.maptiler?.Language) return null;
+    if (getLanguage() === 'he') return L.maptiler.Language.HEBREW;
+    if (getLanguage() === 'fr') return L.maptiler.Language.FRENCH;
+    return L.maptiler.Language.ENGLISH;
+  };
+
+  // MapTiler vector labels can be forced to the UI language. If the key or
+  // SDK is unavailable, retain the known-good OpenStreetMap raster fallback.
+  const hasMapTiler = Boolean(mapTilerKey && L.maptiler?.maptilerLayer);
+  const colored = hasMapTiler
+    ? L.maptiler.maptilerLayer({
+        apiKey: mapTilerKey,
+        style: L.maptiler.MapStyle.STREETS,
+        language: languageForMap(),
+      })
+    : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: osmAttribution,
+      });
+  colored.addTo(map);
 
   const labels = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
@@ -153,7 +169,12 @@ export function createMapView() {
       .addTo(map);
   };
   rebuildLayers();
-  document.addEventListener('skytrace:languagechange', rebuildLayers);
+  document.addEventListener('skytrace:languagechange', () => {
+    if (hasMapTiler && typeof colored.setLanguage === 'function') {
+      colored.setLanguage(languageForMap());
+    }
+    rebuildLayers();
+  });
   map.on('baselayerchange', (event) => {
     if (event.layer === dark) {
       if (!map.hasLayer(labels)) labels.addTo(map);
