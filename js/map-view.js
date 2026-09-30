@@ -1,4 +1,4 @@
-import { getLanguage, t } from './i18n.js';
+import { t } from './i18n.js';
 
 function colorForAltitude(altitude) {
   if (altitude == null) return '#7c8aa3';
@@ -119,8 +119,6 @@ export function createMapView() {
   // here so the map never displays the "API KEY REQUIRED" watermark.
   const esriAttribution = 'Tiles &copy; Esri';
   const osmAttribution = '&copy; OpenStreetMap contributors';
-  const israelHikingAttribution =
-    '&copy; OpenStreetMap contributors · Hebrew map: Israel Hiking Map';
 
   const dark = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
@@ -132,21 +130,11 @@ export function createMapView() {
     { maxZoom: 19, attribution: esriAttribution }
   );
 
-  // Use Hebrew-rendered OSM tiles when the UI is Hebrew. Standard OSM raster
-  // tiles bake local-language labels into the image, so an Arabic place name
-  // cannot be translated after the tile has loaded.
-  const createColoredLayer = () =>
-    getLanguage() === 'he'
-      ? L.tileLayer('https://IsraelHiking.osm.org.il/Hebrew/Tiles/{z}/{x}/{y}.png', {
-          maxZoom: 18,
-          attribution: israelHikingAttribution,
-        })
-      : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: osmAttribution,
-        });
-
-  let colored = createColoredLayer().addTo(map);
+  // The colored OpenStreetMap layer is the default basemap shown on first load.
+  const colored = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: osmAttribution,
+  }).addTo(map);
 
   const labels = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
@@ -165,13 +153,7 @@ export function createMapView() {
       .addTo(map);
   };
   rebuildLayers();
-  document.addEventListener('skytrace:languagechange', () => {
-    const coloredWasActive = map.hasLayer(colored);
-    if (coloredWasActive) map.removeLayer(colored);
-    colored = createColoredLayer();
-    if (coloredWasActive) colored.addTo(map);
-    rebuildLayers();
-  });
+  document.addEventListener('skytrace:languagechange', rebuildLayers);
   map.on('baselayerchange', (event) => {
     if (event.layer === dark) {
       if (!map.hasLayer(labels)) labels.addTo(map);
