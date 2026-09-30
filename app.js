@@ -37,7 +37,19 @@ const elements = {
 };
 
 const api = new AircraftApiClient();
-const { map, planeLayer } = createMapView();
+
+let mapTilerKey = '';
+try {
+  const response = await fetch('/api/map-config', { cache: 'no-store' });
+  if (response.ok) {
+    const config = await response.json();
+    mapTilerKey = typeof config.mapTilerKey === 'string' ? config.mapTilerKey : '';
+  }
+} catch {
+  // Keep the reliable OpenStreetMap fallback if map configuration is unavailable.
+}
+
+const { map, planeLayer } = createMapView({ mapTilerKey });
 map.setView([31.5, 34.8], 6, { animate: false });
 if (elements.status) elements.status.style.display = 'none';
 if (elements.cycles?.parentElement) elements.cycles.parentElement.style.display = 'none';
