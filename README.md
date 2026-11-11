@@ -18,7 +18,7 @@ SkyTrace est une carte web qui affiche des aéronefs en direct à partir de donn
 
 ## Important sur les données
 
-SkyTrace ne dispose pas d’un flux mondial unique. Le navigateur interroge successivement plusieurs zones géographiques via un proxy Cloudflare qui bascule automatiquement entre deux fournisseurs (adsb.lol et airplanes.live, avec retry ponctuel sur les pannes transitoires). Les positions affichées entre deux réponses de l’API sont estimées à partir de la dernière position, de la vitesse et du cap connus. L’extrapolation est limitée à 90 secondes.
+SkyTrace ne dispose pas d’un flux mondial unique. Le navigateur interroge successivement plusieurs zones géographiques via un proxy Cloudflare qui bascule automatiquement entre deux fournisseurs (adsb.lol et adsb.fi, avec retry ponctuel sur les pannes transitoires). Les positions affichées entre deux réponses de l’API sont estimées à partir de la dernière position, de la vitesse et du cap connus. L’extrapolation est limitée à 90 secondes.
 
 La fonction « Trajectoire » ne représente pas le plan de vol officiel. Elle contient uniquement les positions observées par ce navigateur pendant la sélection de l’aéronef.
 
@@ -41,14 +41,24 @@ js/flight-utils.js                Normalisation, conversions, filtres et project
 js/i18n.js                        Traductions et changement de langue
 js/map-view.js                    Carte Leaflet et rendu Canvas
 js/flight-status-integration.js   Affichage des horaires commerciaux (AirLabs)
+js/airport-autocomplete.js       Suggestions d'aéroports dans la recherche
+js/search-ui.js                  Interface de recherche et search-ui.css
+js/search-flight-marker.js       Marqueur de l'avion recherché sur la carte
 functions/api/aircraft.js         Proxy positions : fallback fournisseurs, cache, retry, rate-limit
 functions/api/photo.js            Proxy photo (planespotters.net)
+functions/api/route-flights.js    Recherche d'un vol par numéro ou par trajet (AirLabs)
+functions/api/search-aircraft.js  Recherche d'avions multi-fournisseurs (adsb.fi, adsb.lol, airplanes.live)
+functions/api/diagnostics.js      Diagnostic des fournisseurs (protégé par `SKYTRACE_DIAGNOSTIC_TOKEN`)
+functions/api/map-config.js       Configuration de la carte (clé MapTiler côté serveur)
 functions/api/flight-status.js    Proxy horaires commerciaux (AirLabs)
 functions/api/admin-stats.js      Statistiques d'utilisation (protégé par jeton)
 functions/api/admin-provider-control.js  Pause/reprise manuelle d'un fournisseur
 functions/lib/stats.js            Compteurs partagés (KV Cloudflare)
+functions/lib/provider-cooldown.js  Pause temporaire d'un fournisseur après erreur (cache Cloudflare)
 functions/lib/provider-controls.js  État pause/actif par fournisseur (KV Cloudflare)
 manifest.json / sw.js             Manifeste PWA et service worker (cache-first + shell hors-ligne)
+opensky-proxy/                    Petit serveur séparé (Vercel) pour les données OpenSky
+package.json, eslint.config.js    Scripts (lint, format, tests) et configuration
 wrangler.toml                     Binding KV pour le développement local
 .dev.vars.example                 Modèle des secrets locaux (jamais commité une fois copié)
 _headers                          En-têtes de sécurité Cloudflare Pages
@@ -83,8 +93,12 @@ Le dossier `functions/api/` proxifie les fournisseurs externes plutôt que de le
 
 | Route                              | Rôle                                                                                                                                                                                                                                                                                                                                                         |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /api/aircraft`                | Positions ADS-B. Bascule automatiquement entre `adsb.lol` et `airplanes.live` selon le paramètre `prefer` et le quota journalier restant, avec une tentative de retry unique sur panne transitoire (502/503/504, timeout, erreur réseau — jamais sur 4xx). Sert une réponse en cache, ou une réponse « périmée » (stale), si les deux fournisseurs échouent. |
+| `GET /api/aircraft`                | Positions ADS-B. Bascule automatiquement entre `adsb.lol` et `adsb.fi` selon le paramètre `prefer` et le quota journalier restant, avec une tentative de retry unique sur panne transitoire (502/503/504, timeout, erreur réseau — jamais sur 4xx). Sert une réponse en cache, ou une réponse « périmée » (stale), si les deux fournisseurs échouent. |
 | `GET /api/photo`                   | Photo d'immatriculation via planespotters.net, mise en cache.                                                                                                                                                                                                                                                                                                |
+| `GET /api/route-flights`           | Recherche de vols via AirLabs (numéro de vol ou trajet départ/arrivée), mise en cache 60 s. |
+| `GET /api/search-aircraft`         | Recherche d'avions par indicatif ou immatriculation, sur plusieurs fournisseurs ADS-B. |
+| `GET /api/map-config`              | Renvoie la configuration de la carte (clé MapTiler lue côté serveur). |
+| `GET /api/diagnostics`             | Diagnostic des fournisseurs (protégé par `SKYTRACE_DIAGNOSTIC_TOKEN`). |
 | `GET /api/flight-status`           | Horaires commerciaux via AirLabs (nécessite `AIRLABS_API_KEY`).                                                                                                                                                                                                                                                                                              |
 | `GET /api/admin-stats`             | Statistiques d'usage et santé par fournisseur (protégé par `ADMIN_STATS_TOKEN`).                                                                                                                                                                                                                                                                             |
 | `POST /api/admin-provider-control` | Suspend, réactive ou teste un fournisseur (protégé par `ADMIN_STATS_TOKEN`). Refuse de suspendre le dernier fournisseur de position encore actif.                                                                                                                                                                                                            |
@@ -125,7 +139,8 @@ Le fichier `_headers` est appliqué par Cloudflare Pages pour définir la CSP et
 Les fonctions (`functions/api/`) nécessitent, dans les réglages du projet Cloudflare Pages :
 
 - un binding KV nommé `SKYTRACE_STATS` (stats d'usage et pause fournisseur — dégrade proprement sur un cache temporaire si absent, mais les valeurs ne persistent pas entre déploiements) ;
-- les secrets `AIRLABS_API_KEY` (horaires commerciaux) et `ADMIN_STATS_TOKEN` (accès au tableau de bord) ; ces valeurs ne sont jamais lisibles une fois enregistrées, y compris par l'équipe de développement.
+- les secrets `AIRLABS_API_KEY` (horaires commerciaux) et `ADMIN_STATS_TOKEN` (accès au tableau de bord) ;
+- optionnellement `SKYTRACE_DIAGNOSTIC_TOKEN` (accès au diagnostic) et `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET` (OpenSky) ; ces valeurs ne sont jamais lisibles une fois enregistrées, y compris par l'équipe de développement.
 
 ## Vérification manuelle recommandée
 
@@ -142,7 +157,8 @@ Après un déploiement, vérifier au minimum :
 
 ## Sources externes
 
-- données aériennes : adsb.lol et airplanes.live (bascule automatique) ;
+- données aériennes : adsb.lol et adsb.fi (bascule automatique selon le quota et les pannes), airplanes.live pour la recherche d'avions ;
+- données OpenSky Network (optionnelles, via `opensky-proxy` et le diagnostic) ;
 - horaires commerciaux : AirLabs ;
 - photographies : planespotters.net ;
 - cartographie : CARTO et Esri ;
